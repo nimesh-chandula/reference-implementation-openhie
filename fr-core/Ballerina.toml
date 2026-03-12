@@ -1,0 +1,36 @@
+[package]
+authors = ["Ballerina"]
+distribution = "2201.13.1"
+keywords = ["Healthcare", "FacilityRegistry", "mCSD", "FHIR", "IHE", "Prebuilt", "Service"]
+name = "FRCoreService"
+org = "wso2"
+version = "1.0.0"
+
+[build-options]
+observabilityIncluded = true
+
+[[dependency]]
+org = "ballerinax"
+name = "java.jdbc"
+version = "1.14.1"
+
+[[dependency]]
+org = "ballerinax"
+name = "health.fhirr4"
+version = "3.0.5"
+
+[[dependency]]
+org = "healthcare_samples"
+name = "mcsd_package"
+version = "1.0.0"
+repository = "local"
+
+[[platform.java21.dependency]]
+artifactId = "h2"
+version = "2.3.232"
+groupId = "com.h2database"
+
+[[platform.java21.dependency]]
+artifactId = "postgresql"
+version = "42.7.9"
+groupId = "org.postgresql"

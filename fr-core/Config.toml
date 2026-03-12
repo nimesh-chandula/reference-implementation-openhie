@@ -1,0 +1,21 @@
+port = 9098
+adminPort = 9099
+
+dbType = "h2"
+dbUrl = "jdbc:h2:./db/FR_CORE_DB"
+dbUser = "sa"
+dbPassword = ""
+dbPoolMaxSize = 20
+dbPoolMinIdle = 5
+auditServiceUrl = "http://localhost:9096"
+fhirBaseUrl = "http://localhost:9098/fhir"
+
+[ballerina.http]
+defaultListenerPort = 9098
+
+
+# PostgreSQL production override (uncomment to use):
+# dbType = "postgresql"
+# dbUrl = "jdbc:postgresql://localhost:5432/facility_registry"
+# dbUser = "postgres"
+# dbPassword = "postgres"

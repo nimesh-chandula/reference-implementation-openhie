@@ -21,25 +21,8 @@
 
 # virtual machine crash logs, see http://www.java.com/en/download/help/error_hotspot.xml
 hs_err_pid*
-replay_pid*
 
-# Ballerina build artifacts
+# Ballerina
 target/
-generated/
-
-# H2 embedded database files
-db/
-*.mv.db
-*.trace.db
-
-# IDE
+Config.toml
 .vscode/
-.idea/
-*.iml
-
-# OS
-.DS_Store
-Thumbs.db
-
-# Environment / secrets
-.env
