@@ -1,18 +1,21 @@
 import ballerina/http;
 import ballerina/log;
-import ballerina/time;
-import ballerina/uuid;
 import ballerinax/health.fhir.r4;
 import ballerinax/health.fhirr4;
 import healthcare_samples/mcsd_package;
 import wso2/FRCoreService.r4_api_config;
+import wso2/FRCoreService.types;
+import wso2/FRCoreService.db;
+import wso2/FRCoreService.fhir_utils;
+import wso2/FRCoreService.organization as organizationMod;
+import wso2/FRCoreService.location as locationMod;
+import wso2/FRCoreService.healthcare_service as healthcareServiceMod;
+import wso2/FRCoreService.endpoint as endpointMod;
+import wso2/FRCoreService.org_affiliation as orgAffiliationMod;
 
 configurable int port = 9098;
 configurable int adminPort = 9099;
 configurable string fhirBaseUrl = "http://localhost:9098/fhir";
-
-// Audit client (fire-and-forget to audit-service)
-final http:Client auditClient = check new (auditServiceUrl);
 
 // Admin listener — separate port to avoid conflict with fhirr4:Listener's internal http:Listener
 listener http:Listener adminListener = check new (adminPort);
@@ -28,9 +31,10 @@ listener fhirr4:Listener affFhirListener = check new fhirr4:Listener(config = r4
 // Module init — run once at startup
 // ─────────────────────────────────────────────────────────────
 function init() returns error? {
+    registerObserver(auditObserver);
     mcsd_package:initialize();
-    check initDatabase();
-    log:printInfo("FR Core Service started", port = port, dbType = dbType, fhirBaseUrl = fhirBaseUrl);
+    check db:initDatabase();
+    log:printInfo("FR Core Service started", port = port, fhirBaseUrl = fhirBaseUrl);
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -41,23 +45,23 @@ service /fhir/Organization on orgFhirListener {
     // ITI-90 Search (also handles POST /_search automatically)
     resource function get .(r4:FHIRContext fhirContext) returns json|r4:FHIRError {
         logRequest("GET", "/fhir/Organization");
-        OrgSearchParams params = fhirContextToOrgSearchParams(fhirContext);
-        json[]|error results = searchOrganizations(params);
+        types:OrgSearchParams params = fhirContextToOrgSearchParams(fhirContext);
+        json[]|error results = organizationMod:searchOrganizations(params);
         if results is error {
             return r4:createFHIRError("Organization search failed", r4:ERROR, r4:TRANSIENT_EXCEPTION,
                     diagnostic = results.message());
         }
-        int|error total = countOrganizations(params);
+        int|error total = organizationMod:countOrganizations(params);
         int totalVal = total is int ? total : results.length();
         sendAudit("search", "Organization", "*", "0");
-        return buildSearchBundle("Organization", results, totalVal, fhirBaseUrl + "/Organization");
+        return fhir_utils:buildSearchBundle("Organization", results, totalVal, fhirBaseUrl + "/Organization");
     }
 
     // ITI-90 Read
     resource function get [string id](r4:FHIRContext fhirContext)
             returns mcsd_package:MCSDOrganization|r4:FHIRError {
         logRequest("GET", "/fhir/Organization/" + id);
-        json|()|error result = getOrganization(id);
+        json|()|error result = organizationMod:getOrganization(id);
         if result is error {
             return r4:createFHIRError("Organization read failed", r4:ERROR, r4:TRANSIENT_EXCEPTION,
                     diagnostic = result.message());
@@ -106,7 +110,7 @@ service /fhir/Organization on orgFhirListener {
     resource function post .(r4:FHIRContext fhirContext, json payload)
             returns mcsd_package:MCSDOrganization|r4:FHIRError {
         logRequest("POST", "/fhir/Organization");
-        string typeCode = extractTypeCode(payload);
+        string typeCode = fhir_utils:extractTypeCode(payload);
         string|error createdId;
         if typeCode == "jurisdiction" {
             mcsd_package:MCSDJurisdictionOrganization|error org =
@@ -115,7 +119,7 @@ service /fhir/Organization on orgFhirListener {
                 return r4:createFHIRError("Invalid MCSDJurisdictionOrganization", r4:ERROR, r4:INVALID,
                         diagnostic = org.message(), httpStatusCode = 400);
             }
-            createdId = createOrganization(org);
+            createdId = organizationMod:createOrganization(org);
         } else {
             mcsd_package:MCSDFacilityOrganization|error org =
                     payload.cloneWithType(mcsd_package:MCSDFacilityOrganization);
@@ -123,14 +127,14 @@ service /fhir/Organization on orgFhirListener {
                 return r4:createFHIRError("Invalid MCSDFacilityOrganization", r4:ERROR, r4:INVALID,
                         diagnostic = org.message(), httpStatusCode = 400);
             }
-            createdId = createOrganization(org);
+            createdId = organizationMod:createOrganization(org);
         }
         if createdId is error {
             log:printError("Create Organization error", 'error = createdId);
             return r4:createFHIRError("Create Organization failed", r4:ERROR, r4:TRANSIENT_EXCEPTION,
                     diagnostic = createdId.message());
         }
-        json|()|error created = getOrganization(createdId);
+        json|()|error created = organizationMod:getOrganization(createdId);
         if created !is json {
             return r4:createFHIRError("Could not retrieve created Organization", r4:ERROR, r4:TRANSIENT_EXCEPTION);
         }
@@ -149,7 +153,7 @@ service /fhir/Organization on orgFhirListener {
     resource function put [string id](r4:FHIRContext fhirContext, json payload)
             returns mcsd_package:MCSDOrganization|r4:FHIRError {
         logRequest("PUT", "/fhir/Organization/" + id);
-        boolean|error updated = updateOrganization(id, payload);
+        boolean|error updated = organizationMod:updateOrganization(id, payload);
         if updated is error {
             return r4:createFHIRError("Update Organization failed", r4:ERROR, r4:TRANSIENT_EXCEPTION,
                     diagnostic = updated.message());
@@ -158,7 +162,7 @@ service /fhir/Organization on orgFhirListener {
             return r4:createFHIRError("Organization/" + id + " not found", r4:ERROR, r4:PROCESSING_NOT_FOUND,
                     httpStatusCode = 404);
         }
-        json|()|error result = getOrganization(id);
+        json|()|error result = organizationMod:getOrganization(id);
         if result !is json {
             return r4:createFHIRError("Could not retrieve updated Organization", r4:ERROR, r4:TRANSIENT_EXCEPTION);
         }
@@ -174,7 +178,7 @@ service /fhir/Organization on orgFhirListener {
     // ITI-130 Delete
     resource function delete [string id](r4:FHIRContext fhirContext) returns r4:FHIRError? {
         logRequest("DELETE", "/fhir/Organization/" + id);
-        boolean|error deleted = deleteOrganization(id);
+        boolean|error deleted = organizationMod:deleteOrganization(id);
         if deleted is error {
             return r4:createFHIRError("Delete Organization failed", r4:ERROR, r4:TRANSIENT_EXCEPTION,
                     diagnostic = deleted.message());
@@ -196,22 +200,22 @@ service /fhir/Location on locFhirListener {
 
     resource function get .(r4:FHIRContext fhirContext) returns json|r4:FHIRError {
         logRequest("GET", "/fhir/Location");
-        LocationSearchParams params = fhirContextToLocationSearchParams(fhirContext);
-        json[]|error results = searchLocations(params);
+        types:LocationSearchParams params = fhirContextToLocationSearchParams(fhirContext);
+        json[]|error results = locationMod:searchLocations(params);
         if results is error {
             return r4:createFHIRError("Location search failed", r4:ERROR, r4:TRANSIENT_EXCEPTION,
                     diagnostic = results.message());
         }
-        int|error total = countLocations(params);
+        int|error total = locationMod:countLocations(params);
         int totalVal = total is int ? total : results.length();
         sendAudit("search", "Location", "*", "0");
-        return buildSearchBundle("Location", results, totalVal, fhirBaseUrl + "/Location");
+        return fhir_utils:buildSearchBundle("Location", results, totalVal, fhirBaseUrl + "/Location");
     }
 
     resource function get [string id](r4:FHIRContext fhirContext)
             returns mcsd_package:MCSDLocation|r4:FHIRError {
         logRequest("GET", "/fhir/Location/" + id);
-        json|()|error result = getLocation(id);
+        json|()|error result = locationMod:getLocation(id);
         if result is error {
             return r4:createFHIRError("Location read failed", r4:ERROR, r4:TRANSIENT_EXCEPTION,
                     diagnostic = result.message());
@@ -257,7 +261,7 @@ service /fhir/Location on locFhirListener {
     resource function post .(r4:FHIRContext fhirContext, json payload)
             returns mcsd_package:MCSDLocation|r4:FHIRError {
         logRequest("POST", "/fhir/Location");
-        string typeCode = extractTypeCode(payload);
+        string typeCode = fhir_utils:extractTypeCode(payload);
         string|error createdId;
         if typeCode == "jurisdiction" {
             mcsd_package:MCSDJurisdictionLocation|error loc =
@@ -266,7 +270,7 @@ service /fhir/Location on locFhirListener {
                 return r4:createFHIRError("Invalid MCSDJurisdictionLocation", r4:ERROR, r4:INVALID,
                         diagnostic = loc.message(), httpStatusCode = 400);
             }
-            createdId = createLocation(loc);
+            createdId = locationMod:createLocation(loc);
         } else {
             mcsd_package:MCSDFacilityLocation|error loc =
                     payload.cloneWithType(mcsd_package:MCSDFacilityLocation);
@@ -274,14 +278,14 @@ service /fhir/Location on locFhirListener {
                 return r4:createFHIRError("Invalid MCSDFacilityLocation", r4:ERROR, r4:INVALID,
                         diagnostic = loc.message(), httpStatusCode = 400);
             }
-            createdId = createLocation(loc);
+            createdId = locationMod:createLocation(loc);
         }
         if createdId is error {
             log:printError("Create Location error", 'error = createdId);
             return r4:createFHIRError("Create Location failed", r4:ERROR, r4:TRANSIENT_EXCEPTION,
                     diagnostic = createdId.message());
         }
-        json|()|error created = getLocation(createdId);
+        json|()|error created = locationMod:getLocation(createdId);
         if created !is json {
             return r4:createFHIRError("Could not retrieve created Location", r4:ERROR, r4:TRANSIENT_EXCEPTION);
         }
@@ -299,7 +303,7 @@ service /fhir/Location on locFhirListener {
     resource function put [string id](r4:FHIRContext fhirContext, json payload)
             returns mcsd_package:MCSDLocation|r4:FHIRError {
         logRequest("PUT", "/fhir/Location/" + id);
-        boolean|error updated = updateLocation(id, payload);
+        boolean|error updated = locationMod:updateLocation(id, payload);
         if updated is error {
             return r4:createFHIRError("Update Location failed", r4:ERROR, r4:TRANSIENT_EXCEPTION,
                     diagnostic = updated.message());
@@ -308,7 +312,7 @@ service /fhir/Location on locFhirListener {
             return r4:createFHIRError("Location/" + id + " not found", r4:ERROR, r4:PROCESSING_NOT_FOUND,
                     httpStatusCode = 404);
         }
-        json|()|error result = getLocation(id);
+        json|()|error result = locationMod:getLocation(id);
         if result !is json {
             return r4:createFHIRError("Could not retrieve updated Location", r4:ERROR, r4:TRANSIENT_EXCEPTION);
         }
@@ -323,7 +327,7 @@ service /fhir/Location on locFhirListener {
 
     resource function delete [string id](r4:FHIRContext fhirContext) returns r4:FHIRError? {
         logRequest("DELETE", "/fhir/Location/" + id);
-        boolean|error deleted = deleteLocation(id);
+        boolean|error deleted = locationMod:deleteLocation(id);
         if deleted is error {
             return r4:createFHIRError("Delete Location failed", r4:ERROR, r4:TRANSIENT_EXCEPTION,
                     diagnostic = deleted.message());
@@ -345,20 +349,20 @@ service /fhir/HealthcareService on svcFhirListener {
 
     resource function get .(r4:FHIRContext fhirContext) returns json|r4:FHIRError {
         logRequest("GET", "/fhir/HealthcareService");
-        HealthcareServiceSearchParams params = fhirContextToSvcSearchParams(fhirContext);
-        json[]|error results = searchHealthcareServices(params);
+        types:HealthcareServiceSearchParams params = fhirContextToSvcSearchParams(fhirContext);
+        json[]|error results = healthcareServiceMod:searchHealthcareServices(params);
         if results is error {
             return r4:createFHIRError("HealthcareService search failed", r4:ERROR, r4:TRANSIENT_EXCEPTION,
                     diagnostic = results.message());
         }
         sendAudit("search", "HealthcareService", "*", "0");
-        return buildSearchBundle("HealthcareService", results, results.length(), fhirBaseUrl + "/HealthcareService");
+        return fhir_utils:buildSearchBundle("HealthcareService", results, results.length(), fhirBaseUrl + "/HealthcareService");
     }
 
     resource function get [string id](r4:FHIRContext fhirContext)
             returns mcsd_package:MCSDHealthcareService|r4:FHIRError {
         logRequest("GET", "/fhir/HealthcareService/" + id);
-        json|()|error result = getHealthcareService(id);
+        json|()|error result = healthcareServiceMod:getHealthcareService(id);
         if result is error {
             return r4:createFHIRError("HealthcareService read failed", r4:ERROR, r4:TRANSIENT_EXCEPTION,
                     diagnostic = result.message());
@@ -398,12 +402,12 @@ service /fhir/HealthcareService on svcFhirListener {
             return r4:createFHIRError("Invalid MCSDHealthcareService", r4:ERROR, r4:INVALID,
                     diagnostic = svc.message(), httpStatusCode = 400);
         }
-        string|error createdId = createHealthcareService(svc);
+        string|error createdId = healthcareServiceMod:createHealthcareService(svc);
         if createdId is error {
             return r4:createFHIRError("Create HealthcareService failed", r4:ERROR, r4:TRANSIENT_EXCEPTION,
                     diagnostic = createdId.message());
         }
-        json|()|error created = getHealthcareService(createdId);
+        json|()|error created = healthcareServiceMod:getHealthcareService(createdId);
         if created !is json {
             return r4:createFHIRError("Could not retrieve created HealthcareService", r4:ERROR, r4:TRANSIENT_EXCEPTION);
         }
@@ -421,7 +425,7 @@ service /fhir/HealthcareService on svcFhirListener {
     resource function put [string id](r4:FHIRContext fhirContext, json payload)
             returns mcsd_package:MCSDHealthcareService|r4:FHIRError {
         logRequest("PUT", "/fhir/HealthcareService/" + id);
-        boolean|error updated = updateHealthcareService(id, payload);
+        boolean|error updated = healthcareServiceMod:updateHealthcareService(id, payload);
         if updated is error {
             return r4:createFHIRError("Update HealthcareService failed", r4:ERROR, r4:TRANSIENT_EXCEPTION,
                     diagnostic = updated.message());
@@ -430,11 +434,11 @@ service /fhir/HealthcareService on svcFhirListener {
             return r4:createFHIRError("HealthcareService/" + id + " not found", r4:ERROR, r4:PROCESSING_NOT_FOUND,
                     httpStatusCode = 404);
         }
-        json|()|error result = getHealthcareService(id);
-        if result !is json {
+        json|()|error result2 = healthcareServiceMod:getHealthcareService(id);
+        if result2 !is json {
             return r4:createFHIRError("Could not retrieve updated HealthcareService", r4:ERROR, r4:TRANSIENT_EXCEPTION);
         }
-        mcsd_package:MCSDHealthcareService|error svc = result.cloneWithType(mcsd_package:MCSDHealthcareService);
+        mcsd_package:MCSDHealthcareService|error svc = result2.cloneWithType(mcsd_package:MCSDHealthcareService);
         if svc is error {
             return r4:createFHIRError("HealthcareService parse failed", r4:ERROR, r4:TRANSIENT_EXCEPTION,
                     diagnostic = svc.message());
@@ -445,7 +449,7 @@ service /fhir/HealthcareService on svcFhirListener {
 
     resource function delete [string id](r4:FHIRContext fhirContext) returns r4:FHIRError? {
         logRequest("DELETE", "/fhir/HealthcareService/" + id);
-        boolean|error deleted = deleteHealthcareService(id);
+        boolean|error deleted = healthcareServiceMod:deleteHealthcareService(id);
         if deleted is error {
             return r4:createFHIRError("Delete HealthcareService failed", r4:ERROR, r4:TRANSIENT_EXCEPTION,
                     diagnostic = deleted.message());
@@ -467,20 +471,20 @@ service /fhir/Endpoint on epFhirListener {
 
     resource function get .(r4:FHIRContext fhirContext) returns json|r4:FHIRError {
         logRequest("GET", "/fhir/Endpoint");
-        EndpointSearchParams params = fhirContextToEndpointSearchParams(fhirContext);
-        json[]|error results = searchEndpoints(params);
+        types:EndpointSearchParams params = fhirContextToEndpointSearchParams(fhirContext);
+        json[]|error results = endpointMod:searchEndpoints(params);
         if results is error {
             return r4:createFHIRError("Endpoint search failed", r4:ERROR, r4:TRANSIENT_EXCEPTION,
                     diagnostic = results.message());
         }
         sendAudit("search", "Endpoint", "*", "0");
-        return buildSearchBundle("Endpoint", results, results.length(), fhirBaseUrl + "/Endpoint");
+        return fhir_utils:buildSearchBundle("Endpoint", results, results.length(), fhirBaseUrl + "/Endpoint");
     }
 
     resource function get [string id](r4:FHIRContext fhirContext)
             returns mcsd_package:MCSDEndpoint|r4:FHIRError {
         logRequest("GET", "/fhir/Endpoint/" + id);
-        json|()|error result = getEndpoint(id);
+        json|()|error result = endpointMod:getEndpoint(id);
         if result is error {
             return r4:createFHIRError("Endpoint read failed", r4:ERROR, r4:TRANSIENT_EXCEPTION,
                     diagnostic = result.message());
@@ -506,12 +510,12 @@ service /fhir/Endpoint on epFhirListener {
             return r4:createFHIRError("Invalid MCSDEndpoint", r4:ERROR, r4:INVALID,
                     diagnostic = ep.message(), httpStatusCode = 400);
         }
-        string|error createdId = createEndpoint(ep);
+        string|error createdId = endpointMod:createEndpoint(ep);
         if createdId is error {
             return r4:createFHIRError("Create Endpoint failed", r4:ERROR, r4:TRANSIENT_EXCEPTION,
                     diagnostic = createdId.message());
         }
-        json|()|error created = getEndpoint(createdId);
+        json|()|error created = endpointMod:getEndpoint(createdId);
         if created !is json {
             return r4:createFHIRError("Could not retrieve created Endpoint", r4:ERROR, r4:TRANSIENT_EXCEPTION);
         }
@@ -534,21 +538,21 @@ service /fhir/OrganizationAffiliation on affFhirListener {
 
     resource function get .(r4:FHIRContext fhirContext) returns json|r4:FHIRError {
         logRequest("GET", "/fhir/OrganizationAffiliation");
-        OrgAffiliationSearchParams params = fhirContextToAffiliationSearchParams(fhirContext);
-        json[]|error results = searchOrgAffiliations(params);
+        types:OrgAffiliationSearchParams params = fhirContextToAffiliationSearchParams(fhirContext);
+        json[]|error results = orgAffiliationMod:searchOrgAffiliations(params);
         if results is error {
             return r4:createFHIRError("OrganizationAffiliation search failed", r4:ERROR, r4:TRANSIENT_EXCEPTION,
                     diagnostic = results.message());
         }
         sendAudit("search", "OrganizationAffiliation", "*", "0");
-        return buildSearchBundle("OrganizationAffiliation", results, results.length(),
+        return fhir_utils:buildSearchBundle("OrganizationAffiliation", results, results.length(),
                 fhirBaseUrl + "/OrganizationAffiliation");
     }
 
     resource function get [string id](r4:FHIRContext fhirContext)
             returns mcsd_package:MCSDOrganizationAffiliation|r4:FHIRError {
         logRequest("GET", "/fhir/OrganizationAffiliation/" + id);
-        json|()|error result = getOrgAffiliation(id);
+        json|()|error result = orgAffiliationMod:getOrgAffiliation(id);
         if result is error {
             return r4:createFHIRError("OrganizationAffiliation read failed", r4:ERROR, r4:TRANSIENT_EXCEPTION,
                     diagnostic = result.message());
@@ -576,12 +580,12 @@ service /fhir/OrganizationAffiliation on affFhirListener {
             return r4:createFHIRError("Invalid MCSDOrganizationAffiliation", r4:ERROR, r4:INVALID,
                     diagnostic = aff.message(), httpStatusCode = 400);
         }
-        string|error createdId = createOrgAffiliation(aff);
+        string|error createdId = orgAffiliationMod:createOrgAffiliation(aff);
         if createdId is error {
             return r4:createFHIRError("Create OrganizationAffiliation failed", r4:ERROR, r4:TRANSIENT_EXCEPTION,
                     diagnostic = createdId.message());
         }
-        json|()|error created = getOrgAffiliation(createdId);
+        json|()|error created = orgAffiliationMod:getOrgAffiliation(createdId);
         if created !is json {
             return r4:createFHIRError("Could not retrieve created OrganizationAffiliation", r4:ERROR,
                     r4:TRANSIENT_EXCEPTION);
@@ -600,6 +604,16 @@ service /fhir/OrganizationAffiliation on affFhirListener {
 }
 
 // ─────────────────────────────────────────────────────────────
+// FHIR METADATA — CapabilityStatement (ITI-90)
+// ─────────────────────────────────────────────────────────────
+service /fhir on orgFhirListener {
+    resource function get metadata(r4:FHIRContext fhirContext) returns json {
+        logRequest("GET", "/fhir/metadata");
+        return buildCapabilityStatement(fhirBaseUrl);
+    }
+}
+
+// ─────────────────────────────────────────────────────────────
 // ADMIN APIs (non-FHIR, plain http:Listener)
 // ─────────────────────────────────────────────────────────────
 service /api/admin on adminListener {
@@ -608,7 +622,7 @@ service /api/admin on adminListener {
         logRequest("GET", "/api/admin/hierarchy");
         json|error result = handleGetHierarchy();
         if result is error {
-            return fhirResponse(500, buildOperationOutcome("fatal", "exception", result.message()));
+            return fhirResponse(500, fhir_utils:buildOperationOutcome("fatal", "exception", result.message()));
         }
         return jsonResponse(200, result);
     }
@@ -617,7 +631,7 @@ service /api/admin on adminListener {
         logRequest("GET", "/api/admin/statistics");
         json|error result = handleGetStatistics();
         if result is error {
-            return fhirResponse(500, buildOperationOutcome("fatal", "exception", result.message()));
+            return fhirResponse(500, fhir_utils:buildOperationOutcome("fatal", "exception", result.message()));
         }
         return jsonResponse(200, result);
     }
@@ -626,7 +640,7 @@ service /api/admin on adminListener {
         logRequest("GET", "/api/admin/facilities/map");
         json|error result = handleGetMapGeoJson();
         if result is error {
-            return fhirResponse(500, buildOperationOutcome("fatal", "exception", result.message()));
+            return fhirResponse(500, fhir_utils:buildOperationOutcome("fatal", "exception", result.message()));
         }
         return jsonResponse(200, result);
     }
@@ -635,12 +649,12 @@ service /api/admin on adminListener {
         logRequest("POST", "/api/admin/facilities/" + id + "/status");
         json|http:ClientError bodyJson = req.getJsonPayload();
         if bodyJson is http:ClientError {
-            return fhirResponse(400, buildOperationOutcome("error", "invalid", "Invalid JSON body"));
+            return fhirResponse(400, fhir_utils:buildOperationOutcome("error", "invalid", "Invalid JSON body"));
         }
         json|error result = handleUpdateStatus(id, bodyJson);
         if result is error {
             return fhirResponse(result.message().includes("not found") ? 404 : 500,
-                    buildOperationOutcome("error", "exception", result.message()));
+                    fhir_utils:buildOperationOutcome("error", "exception", result.message()));
         }
         return jsonResponse(200, result);
     }
@@ -649,20 +663,20 @@ service /api/admin on adminListener {
         logRequest("POST", "/api/admin/bulk-import");
         json|http:ClientError bodyJson = req.getJsonPayload();
         if bodyJson is http:ClientError {
-            return fhirResponse(400, buildOperationOutcome("error", "invalid", "Invalid JSON body — expected a FHIR Bundle"));
+            return fhirResponse(400, fhir_utils:buildOperationOutcome("error", "invalid", "Invalid JSON body — expected a FHIR Bundle"));
         }
-        BulkImportResult|error result = handleBundleImport(bodyJson);
+        types:BulkImportResult|error result = handleBundleImport(bodyJson);
         if result is error {
-            return fhirResponse(400, buildOperationOutcome("error", "invalid", result.message()));
+            return fhirResponse(400, fhir_utils:buildOperationOutcome("error", "invalid", result.message()));
         }
         return jsonResponse(200, result.toJson());
     }
 
     resource function post 'bulk\-import/csv(http:Request req) returns http:Response {
         logRequest("POST", "/api/admin/bulk-import/csv");
-        BulkImportResult|error result = handleCsvImport(req);
+        types:BulkImportResult|error result = handleCsvImport(req);
         if result is error {
-            return fhirResponse(400, buildOperationOutcome("error", "invalid", result.message()));
+            return fhirResponse(400, fhir_utils:buildOperationOutcome("error", "invalid", result.message()));
         }
         return jsonResponse(200, result.toJson());
     }
@@ -671,7 +685,7 @@ service /api/admin on adminListener {
         logRequest("GET", "/api/admin/audit-logs");
         json|error result = handleGetAuditLogs(req);
         if result is error {
-            return fhirResponse(502, buildOperationOutcome("error", "transient", result.message()));
+            return fhirResponse(502, fhir_utils:buildOperationOutcome("error", "transient", result.message()));
         }
         return jsonResponse(200, result);
     }
@@ -696,41 +710,6 @@ isolated function jsonResponse(int statusCode, json body) returns http:Response 
     return res;
 }
 
-// ─────────────────────────────────────────────────────────────
-// ATNA Audit logging (fire-and-forget)
-// ─────────────────────────────────────────────────────────────
-isolated function sendAudit(string action, string resourceType, string resourceId, string outcome) {
-    string actionCode = mapActionCode(action);
-    json auditEvent = {
-        "resourceType": "AuditEvent",
-        "id": uuid:createType1AsString(),
-        "type": {
-            "system": "http://terminology.hl7.org/CodeSystem/audit-event-type",
-            "code": "rest"
-        },
-        "subtype": [{"system": "http://hl7.org/fhir/restful-interaction", "code": action}],
-        "action": actionCode,
-        "outcome": outcome,
-        "recorded": time:utcToString(time:utcNow()),
-        "agent": [{"requestor": true, "who": {"display": "fr-core-service"}}],
-        "source": {"observer": {"display": "fr-core-service"}},
-        "entity": [{"what": {"reference": resourceType + "/" + resourceId}}]
-    };
-    http:Response|error resp = auditClient->/audits.post(auditEvent);
-    if resp is error {
-        log:printWarn("Failed to send audit event", 'error = resp,
-                action = action, resourceType = resourceType, resourceId = resourceId);
-    }
-}
-
 isolated function logRequest(string method, string endpoint) {
     log:printInfo(method + " " + endpoint);
-}
-
-isolated function mapActionCode(string action) returns string {
-    if action == "create" || action == "post" { return "C"; }
-    if action == "update" || action == "put" { return "U"; }
-    if action == "delete" { return "D"; }
-    if action == "read" || action == "search" || action == "history" { return "R"; }
-    return "E";
 }

@@ -1,5 +1,9 @@
 import ballerina/http;
 import ballerina/log;
+import wso2/FRCoreService.types;
+import wso2/FRCoreService.admin as adminMod;
+import wso2/FRCoreService.location as locationMod;
+import wso2/FRCoreService.organization as organizationMod;
 
 configurable string auditServiceUrl = "http://localhost:9096";
 
@@ -7,12 +11,12 @@ final http:Client auditProxyClient = check new (auditServiceUrl);
 
 // GET /api/admin/hierarchy — Returns the organizational hierarchy tree
 function handleGetHierarchy() returns json|error {
-    return getHierarchyTree();
+    return adminMod:getHierarchyTree();
 }
 
 // GET /api/admin/statistics — Returns registry statistics
 function handleGetStatistics() returns json|error {
-    RegistryStats stats = check getStats();
+    types:RegistryStats stats = check adminMod:getStats();
     return {
         "totalOrganizations": stats.totalOrganizations,
         "totalLocations": stats.totalLocations,
@@ -27,7 +31,7 @@ function handleGetStatistics() returns json|error {
 
 // GET /api/admin/facilities/map — Returns a GeoJSON FeatureCollection for map display
 function handleGetMapGeoJson() returns json|error {
-    return getMapGeoJson();
+    return adminMod:getMapGeoJson();
 }
 
 // POST /api/admin/facilities/{id}/status — Update a facility's operational status
@@ -40,20 +44,20 @@ function handleUpdateStatus(string id, json body) returns json|error {
     string newStatus = newStatusVal.toString();
 
     // Try Location first, then Organization
-    json|()|error locResult = getLocation(id);
+    json|()|error locResult = locationMod:getLocation(id);
     if locResult is json {
         map<json> locMap = check locResult.ensureType();
         locMap["status"] = newStatus;
-        _ = check updateLocation(id, locMap);
+        _ = check locationMod:updateLocation(id, locMap);
         return {"updated": true, "resourceType": "Location", "id": id, "status": newStatus};
     }
 
-    json|()|error orgResult = getOrganization(id);
+    json|()|error orgResult = organizationMod:getOrganization(id);
     if orgResult is json {
         map<json> orgMap = check orgResult.ensureType();
         boolean activeVal = newStatus == "active";
         orgMap["active"] = activeVal;
-        _ = check updateOrganization(id, orgMap);
+        _ = check organizationMod:updateOrganization(id, orgMap);
         return {"updated": true, "resourceType": "Organization", "id": id, "active": activeVal};
     }
 

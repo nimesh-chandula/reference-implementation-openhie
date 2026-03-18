@@ -2,15 +2,18 @@ import ballerina/sql;
 import ballerina/uuid;
 import ballerinax/java.jdbc;
 import healthcare_samples/mcsd_package;
+import wso2/FRCoreService.types;
+import wso2/FRCoreService.db;
+import wso2/FRCoreService.fhir_utils;
 
 // ─────────────────────────────────────────────────────────────
 // ORGANIZATION AFFILIATION
 // ─────────────────────────────────────────────────────────────
-function createOrgAffiliation(mcsd_package:MCSDOrganizationAffiliation aff) returns string|error {
+public function createOrgAffiliation(mcsd_package:MCSDOrganizationAffiliation aff) returns string|error {
     string id = uuid:createType1AsString();
     json affJson = aff.toJson();
-    string profile = getMcsdProfile("OrganizationAffiliation", "");
-    json stamped = check stampMeta(affJson, id, 1, profile);
+    string profile = fhir_utils:getMcsdProfile("OrganizationAffiliation", "");
+    json stamped = check fhir_utils:stampMeta(affJson, id, 1, profile);
 
     boolean active = aff.active;
     string primaryOrgId = "";
@@ -32,18 +35,18 @@ function createOrgAffiliation(mcsd_package:MCSDOrganizationAffiliation aff) retu
         }
     }
 
-    jdbc:Client db = check getDbClient();
-    _ = check db->execute(`
+    jdbc:Client dbClient = check db:getDbClient();
+    _ = check dbClient->execute(`
         INSERT INTO org_affiliation (id, active, primary_org_id, participating_org_id, fhir_resource, last_updated)
         VALUES (${id}, ${active}, ${primaryOrgId}, ${participatingOrgId}, ${stamped.toJsonString()}, NOW())
     `);
-    check recordHistory("OrganizationAffiliation", id, 1, "CREATE", stamped);
+    check db:recordHistory("OrganizationAffiliation", id, 1, "CREATE", stamped);
     return id;
 }
 
-function getOrgAffiliation(string id) returns json|()|error {
-    jdbc:Client db = check getDbClient();
-    record {string fhir_resource;}|error row = db->queryRow(
+public function getOrgAffiliation(string id) returns json|()|error {
+    jdbc:Client dbClient = check db:getDbClient();
+    record {string fhir_resource;}|error row = dbClient->queryRow(
         `SELECT fhir_resource FROM org_affiliation WHERE id = ${id} AND is_deleted = FALSE`);
     if row is record {string fhir_resource;} {
         return check row.fhir_resource.fromJsonString();
@@ -51,8 +54,8 @@ function getOrgAffiliation(string id) returns json|()|error {
     return ();
 }
 
-function searchOrgAffiliations(OrgAffiliationSearchParams params) returns json[]|error {
-    jdbc:Client db = check getDbClient();
+public function searchOrgAffiliations(types:OrgAffiliationSearchParams params) returns json[]|error {
+    jdbc:Client dbClient = check db:getDbClient();
     sql:ParameterizedQuery query = `SELECT fhir_resource FROM org_affiliation WHERE is_deleted = FALSE`;
     string? active = params.active;
     if active is string {
@@ -60,6 +63,6 @@ function searchOrgAffiliations(OrgAffiliationSearchParams params) returns json[]
         query = sql:queryConcat(query, ` AND active = ${av}`);
     }
     query = sql:queryConcat(query, ` ORDER BY last_updated DESC LIMIT ${params._count} OFFSET ${params._offset}`);
-    stream<record {string fhir_resource;}, sql:Error?> rs = db->query(query);
-    return streamToJsonArray(rs);
+    stream<record {string fhir_resource;}, sql:Error?> rs = dbClient->query(query);
+    return db:streamToJsonArray(rs);
 }

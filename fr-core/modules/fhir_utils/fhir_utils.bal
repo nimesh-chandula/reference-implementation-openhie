@@ -1,8 +1,9 @@
 import ballerina/uuid;
 import ballerina/time;
+import wso2/FRCoreService.types;
 
 // Build a FHIR R4 searchset Bundle from an array of resource JSON entries
-function buildSearchBundle(string resourceType, json[] entries, int total, string selfUrl) returns json {
+public function buildSearchBundle(string resourceType, json[] entries, int total, string selfUrl) returns json {
     string bundleId = uuid:createType1AsString();
     string now = time:utcToString(time:utcNow());
 
@@ -35,12 +36,12 @@ function buildSearchBundle(string resourceType, json[] entries, int total, strin
 }
 
 // Build a FHIR R4 history Bundle per ITI-91
-function buildHistoryBundle(HistoryRow[] rows, string resourceType, string baseUrl) returns json {
+public function buildHistoryBundle(types:HistoryRow[] rows, string resourceType, string baseUrl) returns json {
     string bundleId = uuid:createType1AsString();
     string now = time:utcToString(time:utcNow());
 
     json[] bundleEntries = [];
-    foreach HistoryRow row in rows {
+    foreach types:HistoryRow row in rows {
         string resourceUrl = baseUrl + "/" + resourceType + "/" + row.resourceId;
         string versionUrl = resourceUrl + "/_history/" + row.versionId.toString();
 
@@ -93,7 +94,7 @@ function buildHistoryBundle(HistoryRow[] rows, string resourceType, string baseU
 }
 
 // Build a FHIR R4 OperationOutcome for error responses
-function buildOperationOutcome(string severity, string code, string diagnostics) returns json {
+public function buildOperationOutcome(string severity, string code, string diagnostics) returns json {
     return {
         "resourceType": "OperationOutcome",
         "issue": [
@@ -108,7 +109,7 @@ function buildOperationOutcome(string severity, string code, string diagnostics)
 
 // Stamp FHIR meta fields onto a resource JSON
 // Returns updated JSON with meta.versionId, meta.lastUpdated, meta.profile[], id
-function stampMeta(json 'resource, string id, int versionId, string profile) returns json|error {
+public function stampMeta(json 'resource, string id, int versionId, string profile) returns json|error {
     string now = time:utcToString(time:utcNow());
 
     // Build the updated map
@@ -122,30 +123,15 @@ function stampMeta(json 'resource, string id, int versionId, string profile) ret
     return resourceMap;
 }
 
-// Return the mCSD StructureDefinition profile URI for a given resource type + type code
-function getMcsdProfile(string resourceType, string typeCode) returns string {
-    if resourceType == "Location" {
-        if typeCode == "jurisdiction" {
-            return "https://profiles.ihe.net/ITI/mCSD/StructureDefinition/IHE.mCSD.JurisdictionLocation";
-        }
-        return "https://profiles.ihe.net/ITI/mCSD/StructureDefinition/IHE.mCSD.FacilityLocation";
-    } else if resourceType == "Organization" {
-        if typeCode == "jurisdiction" {
-            return "https://profiles.ihe.net/ITI/mCSD/StructureDefinition/IHE.mCSD.JurisdictionOrganization";
-        }
-        return "https://profiles.ihe.net/ITI/mCSD/StructureDefinition/IHE.mCSD.FacilityOrganization";
-    } else if resourceType == "HealthcareService" {
-        return "https://profiles.ihe.net/ITI/mCSD/StructureDefinition/IHE.mCSD.HealthcareService";
-    } else if resourceType == "Endpoint" {
-        return "https://profiles.ihe.net/ITI/mCSD/StructureDefinition/IHE.mCSD.Endpoint";
-    } else if resourceType == "OrganizationAffiliation" {
-        return "https://profiles.ihe.net/ITI/mCSD/StructureDefinition/IHE.mCSD.OrganizationAffiliation";
-    }
-    return "https://profiles.ihe.net/ITI/mCSD/StructureDefinition/IHE.mCSD.Location";
+// Return the profile URI for a given resource type + type code.
+// Delegates to the ProfileAdapter (profile_adapter.bal) which reads from igConfig —
+// no hardcoded URLs here. All callers (handler files) are unchanged.
+public function getMcsdProfile(string resourceType, string typeCode) returns string {
+    return profileAdapter.getProfileUrl(resourceType, typeCode);
 }
 
 // Parse a FHIR _lastUpdated parameter like "gt2026-01-01T00:00:00Z" into prefix + value
-function parseLastUpdated(string raw) returns LastUpdatedFilter {
+public function parseLastUpdated(string raw) returns types:LastUpdatedFilter {
     string[] prefixes = ["gt", "lt", "ge", "le", "sa", "eb", "ne"];
     foreach string prefix in prefixes {
         if raw.startsWith(prefix) {
@@ -157,7 +143,7 @@ function parseLastUpdated(string raw) returns LastUpdatedFilter {
 }
 
 // Extract the type code ("facility" | "jurisdiction") from the first type coding of a FHIR resource
-function extractTypeCode(json res) returns string {
+public function extractTypeCode(json res) returns string {
     json|error typeArr = res.'type;
     if typeArr is json[] && typeArr.length() > 0 {
         json|error codings = typeArr[0].coding;
@@ -175,7 +161,7 @@ function extractTypeCode(json res) returns string {
 }
 
 // Apply SQL comparison for _lastUpdated filter given a field value and filter
-function matchesLastUpdated(string fieldValue, LastUpdatedFilter filter) returns boolean {
+public function matchesLastUpdated(string fieldValue, types:LastUpdatedFilter filter) returns boolean {
     string prefix = filter.prefix;
     string filterVal = filter.value;
     if prefix == "gt" {
@@ -195,7 +181,7 @@ function matchesLastUpdated(string fieldValue, LastUpdatedFilter filter) returns
 }
 
 // Haversine distance in km between two lat/lon points (for in-memory near search)
-function haversineKm(decimal lat1, decimal lon1, decimal lat2, decimal lon2) returns decimal {
+public function haversineKm(decimal lat1, decimal lon1, decimal lat2, decimal lon2) returns decimal {
     decimal r = 6371.0d;
     decimal dLat = (lat2 - lat1) * 3.14159265358979d / 180.0d;
     decimal dLon = (lon2 - lon1) * 3.14159265358979d / 180.0d;
@@ -204,4 +190,29 @@ function haversineKm(decimal lat1, decimal lon1, decimal lat2, decimal lon2) ret
     decimal cosLat = 1.0d - (lat1 * 3.14159265358979d / 180.0d) * (lat1 * 3.14159265358979d / 180.0d) / 2.0d;
     a = dLat * dLat + cosLat * cosLat * dLon * dLon;
     return r * <decimal>(<float>a).sqrt();
+}
+
+// Parse a FHIR 'near' parameter: "lat|lon|distance|units" (e.g. "6.9271|79.8612|10|km")
+public function parseNearParam(string near) returns types:NearParam|error {
+    string[] parts = re`\|`.split(near);
+    if parts.length() < 3 {
+        return error("Invalid 'near' parameter format. Expected: lat|lon|distance[|units]");
+    }
+    decimal lat = check decimal:fromString(parts[0].trim());
+    decimal lon = check decimal:fromString(parts[1].trim());
+    decimal distance = check decimal:fromString(parts[2].trim());
+
+    // Convert to km if units specified
+    decimal distanceKm = distance;
+    if parts.length() >= 4 {
+        string units = parts[3].trim().toLowerAscii();
+        if units == "mi" || units == "miles" {
+            distanceKm = distance * 1.60934d;
+        } else if units == "m" || units == "meters" {
+            distanceKm = distance / 1000.0d;
+        }
+        // km and [km] are already in km
+    }
+
+    return {lat: lat, lon: lon, distanceKm: distanceKm};
 }

@@ -1,11 +1,13 @@
 import ballerina/http;
 import ballerina/url;
 import ballerinax/health.fhir.r4;
+import wso2/FRCoreService.types;
+import wso2/FRCoreService.fhir_utils;
 
 // Parse Organization search parameters from an HTTP request
-function parseOrgSearchParams(http:Request req) returns OrgSearchParams|error {
+function parseOrgSearchParams(http:Request req) returns types:OrgSearchParams|error {
     map<string[]> queryParams = req.getQueryParams();
-    OrgSearchParams params = {};
+    types:OrgSearchParams params = {};
 
     foreach string key in queryParams.keys() {
         string[] values = queryParams[key] ?: [];
@@ -32,7 +34,7 @@ function parseOrgSearchParams(http:Request req) returns OrgSearchParams|error {
             if offsetVal is int && offsetVal >= 0 { params._offset = offsetVal; }
         }
         else if decodedKey == "_lastUpdated" {
-            LastUpdatedFilter filter = parseLastUpdated(decodedVal);
+            types:LastUpdatedFilter filter = fhir_utils:parseLastUpdated(decodedVal);
             params._lastUpdated = filter.value;
             params._lastUpdatedPrefix = filter.prefix;
         }
@@ -41,9 +43,9 @@ function parseOrgSearchParams(http:Request req) returns OrgSearchParams|error {
 }
 
 // Parse Location search parameters from an HTTP request
-function parseLocationSearchParams(http:Request req) returns LocationSearchParams|error {
+function parseLocationSearchParams(http:Request req) returns types:LocationSearchParams|error {
     map<string[]> queryParams = req.getQueryParams();
-    LocationSearchParams params = {};
+    types:LocationSearchParams params = {};
 
     foreach string key in queryParams.keys() {
         string[] values = queryParams[key] ?: [];
@@ -71,7 +73,7 @@ function parseLocationSearchParams(http:Request req) returns LocationSearchParam
             if offsetVal is int && offsetVal >= 0 { params._offset = offsetVal; }
         }
         else if decodedKey == "_lastUpdated" {
-            LastUpdatedFilter filter = parseLastUpdated(decodedVal);
+            types:LastUpdatedFilter filter = fhir_utils:parseLastUpdated(decodedVal);
             params._lastUpdated = filter.value;
             params._lastUpdatedPrefix = filter.prefix;
         }
@@ -80,9 +82,9 @@ function parseLocationSearchParams(http:Request req) returns LocationSearchParam
 }
 
 // Parse HealthcareService search parameters
-function parseSvcSearchParams(http:Request req) returns HealthcareServiceSearchParams|error {
+function parseSvcSearchParams(http:Request req) returns types:HealthcareServiceSearchParams|error {
     map<string[]> queryParams = req.getQueryParams();
-    HealthcareServiceSearchParams params = {};
+    types:HealthcareServiceSearchParams params = {};
 
     foreach string key in queryParams.keys() {
         string[] values = queryParams[key] ?: [];
@@ -111,9 +113,9 @@ function parseSvcSearchParams(http:Request req) returns HealthcareServiceSearchP
 }
 
 // Parse Endpoint search parameters
-function parseEndpointSearchParams(http:Request req) returns EndpointSearchParams|error {
+function parseEndpointSearchParams(http:Request req) returns types:EndpointSearchParams|error {
     map<string[]> queryParams = req.getQueryParams();
-    EndpointSearchParams params = {};
+    types:EndpointSearchParams params = {};
 
     foreach string key in queryParams.keys() {
         string[] values = queryParams[key] ?: [];
@@ -137,9 +139,9 @@ function parseEndpointSearchParams(http:Request req) returns EndpointSearchParam
 }
 
 // Parse OrganizationAffiliation search parameters
-function parseAffiliationSearchParams(http:Request req) returns OrgAffiliationSearchParams|error {
+function parseAffiliationSearchParams(http:Request req) returns types:OrgAffiliationSearchParams|error {
     map<string[]> queryParams = req.getQueryParams();
-    OrgAffiliationSearchParams params = {};
+    types:OrgAffiliationSearchParams params = {};
 
     foreach string key in queryParams.keys() {
         string[] values = queryParams[key] ?: [];
@@ -182,34 +184,9 @@ function parseFormBody(string body) returns map<string>|error {
     return result;
 }
 
-// Parse a FHIR 'near' parameter: "lat|lon|distance|units" (e.g. "6.9271|79.8612|10|km")
-function parseNearParam(string near) returns NearParam|error {
-    string[] parts = re`\|`.split(near);
-    if parts.length() < 3 {
-        return error("Invalid 'near' parameter format. Expected: lat|lon|distance[|units]");
-    }
-    decimal lat = check decimal:fromString(parts[0].trim());
-    decimal lon = check decimal:fromString(parts[1].trim());
-    decimal distance = check decimal:fromString(parts[2].trim());
-
-    // Convert to km if units specified
-    decimal distanceKm = distance;
-    if parts.length() >= 4 {
-        string units = parts[3].trim().toLowerAscii();
-        if units == "mi" || units == "miles" {
-            distanceKm = distance * 1.60934d;
-        } else if units == "m" || units == "meters" {
-            distanceKm = distance / 1000.0d;
-        }
-        // km and [km] are already in km
-    }
-
-    return {lat: lat, lon: lon, distanceKm: distanceKm};
-}
-
-// Build OrgSearchParams from a map<string> (for POST _search body parsing)
-function mapToOrgSearchParams(map<string> params) returns OrgSearchParams {
-    OrgSearchParams result = {};
+// Build types:OrgSearchParams from a map<string> (for POST _search body parsing)
+function mapToOrgSearchParams(map<string> params) returns types:OrgSearchParams {
+    types:OrgSearchParams result = {};
     string? id = params["_id"];
     if id is string { result._id = id; }
     string? active = params["active"];
@@ -226,7 +203,7 @@ function mapToOrgSearchParams(map<string> params) returns OrgSearchParams {
     if partof is string { result.partof = partof; }
     string? lastUpdated = params["_lastUpdated"];
     if lastUpdated is string {
-        LastUpdatedFilter filter = parseLastUpdated(lastUpdated);
+        types:LastUpdatedFilter filter = fhir_utils:parseLastUpdated(lastUpdated);
         result._lastUpdated = filter.value;
         result._lastUpdatedPrefix = filter.prefix;
     }
@@ -259,9 +236,9 @@ function getSearchParamModifier(r4:FHIRContext ctx, string name) returns string?
     return ();
 }
 
-// Convert FHIRContext search parameters to OrgSearchParams
-function fhirContextToOrgSearchParams(r4:FHIRContext ctx) returns OrgSearchParams {
-    OrgSearchParams params = {};
+// Convert FHIRContext search parameters to types:OrgSearchParams
+function fhirContextToOrgSearchParams(r4:FHIRContext ctx) returns types:OrgSearchParams {
+    types:OrgSearchParams params = {};
 
     string? id = getSearchParamValue(ctx, "_id");
     if id is string { params._id = id; }
@@ -293,7 +270,7 @@ function fhirContextToOrgSearchParams(r4:FHIRContext ctx) returns OrgSearchParam
 
     string? lastUpdated = getSearchParamValue(ctx, "_lastUpdated");
     if lastUpdated is string {
-        LastUpdatedFilter filter = parseLastUpdated(lastUpdated);
+        types:LastUpdatedFilter filter = fhir_utils:parseLastUpdated(lastUpdated);
         params._lastUpdated = filter.value;
         params._lastUpdatedPrefix = filter.prefix;
     }
@@ -320,9 +297,9 @@ function fhirContextToOrgSearchParams(r4:FHIRContext ctx) returns OrgSearchParam
     return params;
 }
 
-// Convert FHIRContext search parameters to LocationSearchParams
-function fhirContextToLocationSearchParams(r4:FHIRContext ctx) returns LocationSearchParams {
-    LocationSearchParams params = {};
+// Convert FHIRContext search parameters to types:LocationSearchParams
+function fhirContextToLocationSearchParams(r4:FHIRContext ctx) returns types:LocationSearchParams {
+    types:LocationSearchParams params = {};
 
     string? id = getSearchParamValue(ctx, "_id");
     if id is string { params._id = id; }
@@ -357,7 +334,7 @@ function fhirContextToLocationSearchParams(r4:FHIRContext ctx) returns LocationS
 
     string? lastUpdated = getSearchParamValue(ctx, "_lastUpdated");
     if lastUpdated is string {
-        LastUpdatedFilter filter = parseLastUpdated(lastUpdated);
+        types:LastUpdatedFilter filter = fhir_utils:parseLastUpdated(lastUpdated);
         params._lastUpdated = filter.value;
         params._lastUpdatedPrefix = filter.prefix;
     }
@@ -383,9 +360,9 @@ function fhirContextToLocationSearchParams(r4:FHIRContext ctx) returns LocationS
     return params;
 }
 
-// Convert FHIRContext search parameters to HealthcareServiceSearchParams
-function fhirContextToSvcSearchParams(r4:FHIRContext ctx) returns HealthcareServiceSearchParams {
-    HealthcareServiceSearchParams params = {};
+// Convert FHIRContext search parameters to types:HealthcareServiceSearchParams
+function fhirContextToSvcSearchParams(r4:FHIRContext ctx) returns types:HealthcareServiceSearchParams {
+    types:HealthcareServiceSearchParams params = {};
 
     string? active = getSearchParamValue(ctx, "active");
     if active is string { params.active = active; }
@@ -430,9 +407,9 @@ function fhirContextToSvcSearchParams(r4:FHIRContext ctx) returns HealthcareServ
     return params;
 }
 
-// Convert FHIRContext search parameters to EndpointSearchParams
-function fhirContextToEndpointSearchParams(r4:FHIRContext ctx) returns EndpointSearchParams {
-    EndpointSearchParams params = {};
+// Convert FHIRContext search parameters to types:EndpointSearchParams
+function fhirContextToEndpointSearchParams(r4:FHIRContext ctx) returns types:EndpointSearchParams {
+    types:EndpointSearchParams params = {};
 
     string? identifier = getSearchParamValue(ctx, "identifier");
     if identifier is string { params.identifier = identifier; }
@@ -464,9 +441,9 @@ function fhirContextToEndpointSearchParams(r4:FHIRContext ctx) returns EndpointS
     return params;
 }
 
-// Convert FHIRContext search parameters to OrgAffiliationSearchParams
-function fhirContextToAffiliationSearchParams(r4:FHIRContext ctx) returns OrgAffiliationSearchParams {
-    OrgAffiliationSearchParams params = {};
+// Convert FHIRContext search parameters to types:OrgAffiliationSearchParams
+function fhirContextToAffiliationSearchParams(r4:FHIRContext ctx) returns types:OrgAffiliationSearchParams {
+    types:OrgAffiliationSearchParams params = {};
 
     string? active = getSearchParamValue(ctx, "active");
     if active is string { params.active = active; }
@@ -504,9 +481,9 @@ function fhirContextToAffiliationSearchParams(r4:FHIRContext ctx) returns OrgAff
     return params;
 }
 
-// Build LocationSearchParams from a map<string>
-function mapToLocationSearchParams(map<string> params) returns LocationSearchParams {
-    LocationSearchParams result = {};
+// Build types:LocationSearchParams from a map<string>
+function mapToLocationSearchParams(map<string> params) returns types:LocationSearchParams {
+    types:LocationSearchParams result = {};
     string? id = params["_id"];
     if id is string { result._id = id; }
     string? name = params["name"];

@@ -3,10 +3,17 @@ import ballerina/log;
 import ballerina/mime;
 import ballerinax/health.fhir.r4;
 import healthcare_samples/mcsd_package;
+import wso2/FRCoreService.types;
+import wso2/FRCoreService.fhir_utils;
+import wso2/FRCoreService.organization as organizationMod;
+import wso2/FRCoreService.location as locationMod;
+import wso2/FRCoreService.healthcare_service as healthcareServiceMod;
+import wso2/FRCoreService.endpoint as endpointMod;
+import wso2/FRCoreService.org_affiliation as orgAffiliationMod;
 
 // POST /api/admin/bulk-import — Process a FHIR Bundle (batch or transaction)
-function handleBundleImport(json bundle) returns BulkImportResult|error {
-    BulkImportResult result = {total: 0, created: 0, updated: 0, failed: 0, errors: []};
+function handleBundleImport(json bundle) returns types:BulkImportResult|error {
+    types:BulkImportResult result = {total: 0, created: 0, updated: 0, failed: 0, errors: []};
 
     json|error bundleType = bundle.resourceType;
     if bundleType is error || bundleType.toString() != "Bundle" {
@@ -73,16 +80,16 @@ function processResourceEntry(string resourceType, string method, json resourceJ
         if method == "PUT" {
             json|error idJson = resourceJson.id;
             if !(idJson is json) { return error("PUT requires resource.id"); }
-            _ = check updateLocation(idJson.toString(), resourceJson);
+            _ = check locationMod:updateLocation(idJson.toString(), resourceJson);
             return "updated";
         } else {
-            string typeCode = extractTypeCode(resourceJson);
+            string typeCode = fhir_utils:extractTypeCode(resourceJson);
             if typeCode == "jurisdiction" {
                 mcsd_package:MCSDJurisdictionLocation loc = check resourceJson.cloneWithType(mcsd_package:MCSDJurisdictionLocation);
-                _ = check createLocation(loc);
+                _ = check locationMod:createLocation(loc);
             } else {
                 mcsd_package:MCSDFacilityLocation loc = check resourceJson.cloneWithType(mcsd_package:MCSDFacilityLocation);
-                _ = check createLocation(loc);
+                _ = check locationMod:createLocation(loc);
             }
             return "created";
         }
@@ -90,16 +97,16 @@ function processResourceEntry(string resourceType, string method, json resourceJ
         if method == "PUT" {
             json|error idJson = resourceJson.id;
             if !(idJson is json) { return error("PUT requires resource.id"); }
-            _ = check updateOrganization(idJson.toString(), resourceJson);
+            _ = check organizationMod:updateOrganization(idJson.toString(), resourceJson);
             return "updated";
         } else {
-            string typeCode = extractTypeCode(resourceJson);
+            string typeCode = fhir_utils:extractTypeCode(resourceJson);
             if typeCode == "jurisdiction" {
                 mcsd_package:MCSDJurisdictionOrganization org = check resourceJson.cloneWithType(mcsd_package:MCSDJurisdictionOrganization);
-                _ = check createOrganization(org);
+                _ = check organizationMod:createOrganization(org);
             } else {
                 mcsd_package:MCSDFacilityOrganization org = check resourceJson.cloneWithType(mcsd_package:MCSDFacilityOrganization);
-                _ = check createOrganization(org);
+                _ = check organizationMod:createOrganization(org);
             }
             return "created";
         }
@@ -107,20 +114,20 @@ function processResourceEntry(string resourceType, string method, json resourceJ
         if method == "PUT" {
             json|error idJson = resourceJson.id;
             if !(idJson is json) { return error("PUT requires resource.id"); }
-            _ = check updateHealthcareService(idJson.toString(), resourceJson);
+            _ = check healthcareServiceMod:updateHealthcareService(idJson.toString(), resourceJson);
             return "updated";
         } else {
             mcsd_package:MCSDHealthcareService svc = check resourceJson.cloneWithType(mcsd_package:MCSDHealthcareService);
-            _ = check createHealthcareService(svc);
+            _ = check healthcareServiceMod:createHealthcareService(svc);
             return "created";
         }
     } else if resourceType == "Endpoint" {
         mcsd_package:MCSDEndpoint ep = check resourceJson.cloneWithType(mcsd_package:MCSDEndpoint);
-        _ = check createEndpoint(ep);
+        _ = check endpointMod:createEndpoint(ep);
         return "created";
     } else if resourceType == "OrganizationAffiliation" {
         mcsd_package:MCSDOrganizationAffiliation aff = check resourceJson.cloneWithType(mcsd_package:MCSDOrganizationAffiliation);
-        _ = check createOrgAffiliation(aff);
+        _ = check orgAffiliationMod:createOrgAffiliation(aff);
         return "created";
     }
 
@@ -162,8 +169,8 @@ function sortBundleEntries(json[] entries) returns json[] {
 }
 
 // POST /api/admin/bulk-import/csv — Process a CSV file upload (multipart/form-data)
-function handleCsvImport(http:Request req) returns BulkImportResult|error {
-    BulkImportResult result = {total: 0, created: 0, updated: 0, failed: 0, errors: []};
+function handleCsvImport(http:Request req) returns types:BulkImportResult|error {
+    types:BulkImportResult result = {total: 0, created: 0, updated: 0, failed: 0, errors: []};
 
     mime:Entity[]|http:ClientError bodyParts = req.getBodyParts();
     if bodyParts is http:ClientError {
@@ -266,7 +273,7 @@ function processCsvRow(map<string> row) returns string|error {
         'type: [orgTypeConcept]
     };
 
-    string orgId = check createOrganization(org);
+    string orgId = check organizationMod:createOrganization(org);
 
     // Build position if lat/lon provided
     mcsd_package:MCSDFacilityLocationPosition? position = ();
@@ -306,6 +313,6 @@ function processCsvRow(map<string> row) returns string|error {
         address: address
     };
 
-    _ = check createLocation(loc);
+    _ = check locationMod:createLocation(loc);
     return "created";
 }

@@ -1,7 +1,7 @@
 // Search parameter records — one per FHIR resource type
 // nameModifier values: "contains" | "exact" | "" (default = starts-with)
 
-type OrgSearchParams record {|
+public type OrgSearchParams record {|
     string? _id = ();
     string? active = ();
     string? identifier = ();
@@ -17,7 +17,7 @@ type OrgSearchParams record {|
     int _offset = 0;
 |};
 
-type LocationSearchParams record {|
+public type LocationSearchParams record {|
     string? _id = ();
     string? identifier = ();
     string? name = ();
@@ -34,7 +34,7 @@ type LocationSearchParams record {|
     int _offset = 0;
 |};
 
-type HealthcareServiceSearchParams record {|
+public type HealthcareServiceSearchParams record {|
     string? active = ();
     string? identifier = ();
     string? location = ();
@@ -46,7 +46,7 @@ type HealthcareServiceSearchParams record {|
     int _offset = 0;
 |};
 
-type EndpointSearchParams record {|
+public type EndpointSearchParams record {|
     string? identifier = ();
     string? organization = ();
     string? status = ();
@@ -54,7 +54,7 @@ type EndpointSearchParams record {|
     int _offset = 0;
 |};
 
-type OrgAffiliationSearchParams record {|
+public type OrgAffiliationSearchParams record {|
     string? active = ();
     string? identifier = ();
     string? participatingOrganization = ();
@@ -65,7 +65,7 @@ type OrgAffiliationSearchParams record {|
 |};
 
 // Internal DB result row — carries the raw FHIR JSON string from JSONB column
-type ResourceRow record {|
+public type ResourceRow record {|
     string id;
     int versionId;
     string fhirResource;
@@ -74,7 +74,7 @@ type ResourceRow record {|
 |};
 
 // For ITI-91 history
-type HistoryRow record {|
+public type HistoryRow record {|
     string resourceId;
     int versionId;
     string action;       // "CREATE" | "UPDATE" | "DELETE"
@@ -83,7 +83,7 @@ type HistoryRow record {|
 |};
 
 // Admin stats response
-type RegistryStats record {|
+public type RegistryStats record {|
     int totalOrganizations;
     int totalLocations;
     int totalHealthcareServices;
@@ -95,7 +95,7 @@ type RegistryStats record {|
 |};
 
 // Bulk import result summary
-type BulkImportResult record {|
+public type BulkImportResult record {|
     int total;
     int created;
     int updated;
@@ -104,14 +104,14 @@ type BulkImportResult record {|
 |};
 
 // Geographic near-search parsed parameter
-type NearParam record {|
+public type NearParam record {|
     decimal lat;
     decimal lon;
     decimal distanceKm;
 |};
 
 // Parsed _lastUpdated parameter (e.g. "gt2026-01-01T00:00:00Z")
-type LastUpdatedFilter record {|
+public type LastUpdatedFilter record {|
     string prefix;   // "gt" | "lt" | "ge" | "le" | "sa" | "eb"
     string value;    // ISO 8601 datetime string
 |};

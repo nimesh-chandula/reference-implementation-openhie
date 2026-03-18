@@ -1,3 +1,6 @@
+import wso2/FRCoreService.types;
+import wso2/FRCoreService.history as historyMod;
+import wso2/FRCoreService.fhir_utils;
 // ITI-91: Request Care Services Updates
 // Handles _history endpoint logic for Location, Organization, HealthcareService
 
@@ -11,8 +14,8 @@ function handleHistory(string resourceType, string? since, string baseUrl) retur
         return error("History not supported for resource type: " + resourceType);
     }
 
-    HistoryRow[] rows = check getResourceHistory(resourceType, since);
-    return buildHistoryBundle(rows, resourceType, baseUrl);
+    types:HistoryRow[] rows = check historyMod:getResourceHistory(resourceType, since);
+    return fhir_utils:buildHistoryBundle(rows, resourceType, baseUrl);
 }
 
 // Validate an ISO 8601 datetime string for the _since parameter

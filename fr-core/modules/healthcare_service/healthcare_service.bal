@@ -2,15 +2,18 @@ import ballerina/sql;
 import ballerina/uuid;
 import ballerinax/java.jdbc;
 import healthcare_samples/mcsd_package;
+import wso2/FRCoreService.types;
+import wso2/FRCoreService.db;
+import wso2/FRCoreService.fhir_utils;
 
 // ─────────────────────────────────────────────────────────────
 // HEALTHCARE SERVICE
 // ─────────────────────────────────────────────────────────────
-function createHealthcareService(mcsd_package:MCSDHealthcareService svc) returns string|error {
+public function createHealthcareService(mcsd_package:MCSDHealthcareService svc) returns string|error {
     string id = uuid:createType1AsString();
     json svcJson = svc.toJson();
-    string profile = getMcsdProfile("HealthcareService", "");
-    json stamped = check stampMeta(svcJson, id, 1, profile);
+    string profile = fhir_utils:getMcsdProfile("HealthcareService", "");
+    json stamped = check fhir_utils:stampMeta(svcJson, id, 1, profile);
 
     string name = svc.name;
     string? providedById = ();
@@ -23,45 +26,45 @@ function createHealthcareService(mcsd_package:MCSDHealthcareService svc) returns
         }
     }
 
-    jdbc:Client db = check getDbClient();
-    _ = check db->execute(`
+    jdbc:Client dbClient = check db:getDbClient();
+    _ = check dbClient->execute(`
         INSERT INTO healthcare_service (id, version_id, active, name, provided_by_id, fhir_resource, last_updated, created_at)
         VALUES (${id}, 1, TRUE, ${name}, ${providedById}, ${stamped.toJsonString()}, NOW(), NOW())
     `);
-    check recordHistory("HealthcareService", id, 1, "CREATE", stamped);
+    check db:recordHistory("HealthcareService", id, 1, "CREATE", stamped);
     return id;
 }
 
-function updateHealthcareService(string id, json svcJson) returns boolean|error {
-    jdbc:Client db = check getDbClient();
+public function updateHealthcareService(string id, json svcJson) returns boolean|error {
+    jdbc:Client dbClient = check db:getDbClient();
     json|error nameVal = svcJson.name;
     string name = nameVal is json ? nameVal.toString() : "";
 
-    sql:ExecutionResult result = check db->execute(`
+    sql:ExecutionResult result = check dbClient->execute(`
         UPDATE healthcare_service
         SET name = ${name}, fhir_resource = ${svcJson.toJsonString()},
             last_updated = NOW(), version_id = version_id + 1
         WHERE id = ${id} AND is_deleted = FALSE
     `);
     if result.affectedRowCount == 0 { return false; }
-    check recordHistory("HealthcareService", id, 0, "UPDATE", svcJson);
+    check db:recordHistory("HealthcareService", id, 0, "UPDATE", svcJson);
     return true;
 }
 
-function deleteHealthcareService(string id) returns boolean|error {
-    jdbc:Client db = check getDbClient();
-    sql:ExecutionResult result = check db->execute(`
+public function deleteHealthcareService(string id) returns boolean|error {
+    jdbc:Client dbClient = check db:getDbClient();
+    sql:ExecutionResult result = check dbClient->execute(`
         UPDATE healthcare_service SET is_deleted = TRUE, last_updated = NOW()
         WHERE id = ${id} AND is_deleted = FALSE
     `);
     if result.affectedRowCount == 0 { return false; }
-    check recordHistory("HealthcareService", id, 0, "DELETE", ());
+    check db:recordHistory("HealthcareService", id, 0, "DELETE", ());
     return true;
 }
 
-function getHealthcareService(string id) returns json|()|error {
-    jdbc:Client db = check getDbClient();
-    record {string fhir_resource;}|error row = db->queryRow(
+public function getHealthcareService(string id) returns json|()|error {
+    jdbc:Client dbClient = check db:getDbClient();
+    record {string fhir_resource;}|error row = dbClient->queryRow(
         `SELECT fhir_resource FROM healthcare_service WHERE id = ${id} AND is_deleted = FALSE`);
     if row is record {string fhir_resource;} {
         return check row.fhir_resource.fromJsonString();
@@ -69,8 +72,8 @@ function getHealthcareService(string id) returns json|()|error {
     return ();
 }
 
-function searchHealthcareServices(HealthcareServiceSearchParams params) returns json[]|error {
-    jdbc:Client db = check getDbClient();
+public function searchHealthcareServices(types:HealthcareServiceSearchParams params) returns json[]|error {
+    jdbc:Client dbClient = check db:getDbClient();
     sql:ParameterizedQuery query = `SELECT fhir_resource FROM healthcare_service WHERE is_deleted = FALSE`;
     string? active = params.active;
     if active is string {
@@ -91,6 +94,6 @@ function searchHealthcareServices(HealthcareServiceSearchParams params) returns 
         }
     }
     query = sql:queryConcat(query, ` ORDER BY last_updated DESC LIMIT ${params._count} OFFSET ${params._offset}`);
-    stream<record {string fhir_resource;}, sql:Error?> rs = db->query(query);
-    return streamToJsonArray(rs);
+    stream<record {string fhir_resource;}, sql:Error?> rs = dbClient->query(query);
+    return db:streamToJsonArray(rs);
 }
