@@ -309,22 +309,48 @@ service / on new http:Listener(port) {
     }
 }
 
-isolated function toFhirAuditEvent(InternalAuditEvent internalAuditEvent) returns international401:AuditEvent => {
-    id: uuid:createType1AsString(),
-    'type: getCoding("http://terminology.hl7.org/CodeSystem/audit-event-type", internalAuditEvent.typeCode),
-    subtype: [getCoding("http://hl7.org/fhir/restful-interaction", internalAuditEvent.subTypeCode)],
-    action: internalAuditEvent.actionCode,
-    outcome: internalAuditEvent.outcomeCode,
-    outcomeDesc: internalAuditEvent.outcomeDesc != "" ? internalAuditEvent.outcomeDesc : (),
-    recorded: internalAuditEvent.recordedTime,
-    agent: [getAgent(internalAuditEvent.agentType, internalAuditEvent.agentName, internalAuditEvent.agentIsRequestor)],
-    entity: [getEntity(internalAuditEvent.entityType, internalAuditEvent.entityRole, internalAuditEvent.entityWhatReference)],
-    'source: {
-        observer: {
-            display: internalAuditEvent.sourceObserverName == "" ? fhirServerName : internalAuditEvent.sourceObserverName
-        },
-        'type: [getCoding("http://terminology.hl7.org/CodeSystem/security-source-type", internalAuditEvent.sourceObserverType)]
+isolated function toFhirAuditEvent(InternalAuditEvent internalAuditEvent) returns international401:AuditEvent {
+    international401:AuditEventAgent[] agents = [];
+    foreach AuditAgent a in internalAuditEvent.agents {
+        agents.push(getAgent(a));
     }
+
+    international401:AuditEventEntity[] entities = [];
+    foreach AuditEntity e in internalAuditEvent.entities {
+        entities.push(getEntity(e));
+    }
+
+    international401:AuditEvent auditEvent = {
+        id: uuid:createType1AsString(),
+        'type: getCoding("http://terminology.hl7.org/CodeSystem/audit-event-type", internalAuditEvent.typeCode),
+        subtype: [getCoding("http://hl7.org/fhir/restful-interaction", internalAuditEvent.subTypeCode)],
+        action: internalAuditEvent.actionCode,
+        outcome: internalAuditEvent.outcomeCode,
+        outcomeDesc: internalAuditEvent.outcomeDesc != "" ? internalAuditEvent.outcomeDesc : (),
+        recorded: internalAuditEvent.recordedTime,
+        agent: agents,
+        entity: entities,
+        'source: {
+            observer: getSourceObserver(internalAuditEvent),
+            site: internalAuditEvent.sourceSite != "" ? internalAuditEvent.sourceSite : (),
+            'type: [getCoding("http://terminology.hl7.org/CodeSystem/security-source-type", internalAuditEvent.sourceObserverType)]
+        }
+    };
+
+    if internalAuditEvent.purposeOfEventCode != "" {
+        auditEvent.purposeOfEvent = [{
+            coding: [getCoding("http://terminology.hl7.org/CodeSystem/v3-ActReason", internalAuditEvent.purposeOfEventCode)]
+        }];
+    }
+
+    if internalAuditEvent.periodStart != "" || internalAuditEvent.periodEnd != "" {
+        auditEvent.period = {
+            'start: internalAuditEvent.periodStart != "" ? internalAuditEvent.periodStart : (),
+            end: internalAuditEvent.periodEnd != "" ? internalAuditEvent.periodEnd : ()
+        };
+    }
+
+    return auditEvent;
 };
 
 isolated function getCoding(string system, string code) returns r4:Coding {
@@ -341,27 +367,100 @@ isolated function getCoding(string system, string code) returns r4:Coding {
     return fhirCode;
 };
 
-isolated function getAgent(string 'type, string name, boolean isRequestor) returns international401:AuditEventAgent {
+isolated function getAgent(AuditAgent agentData) returns international401:AuditEventAgent {
+    r4:Reference who = {};
+    if agentData.whoDisplay != "" {
+        who.display = agentData.whoDisplay;
+    }
+    if agentData.whoIdentifierSystem != "" || agentData.whoIdentifierValue != "" {
+        who.identifier = {
+            system: agentData.whoIdentifierSystem != "" ? agentData.whoIdentifierSystem : (),
+            value: agentData.whoIdentifierValue != "" ? agentData.whoIdentifierValue : ()
+        };
+    }
+
     international401:AuditEventAgent agent = {
         'type: {
-            coding:
-            [getCoding("http://terminology.hl7.org/CodeSystem/extra-security-role-type", 'type == "" ? agentType : 'type)]
+            coding: [getCoding("http://terminology.hl7.org/CodeSystem/extra-security-role-type",
+                agentData.typeCode == "" ? agentType : agentData.typeCode)]
         },
-        who: {
-            display: name
-        },
-        requestor: isRequestor
+        who: who,
+        requestor: agentData.requestor
     };
+
+    if agentData.name != "" {
+        agent.name = agentData.name;
+    }
+    if agentData.altId != "" {
+        agent.altId = agentData.altId;
+    }
+    if agentData.networkAddress != "" {
+        agent.network = {
+            address: agentData.networkAddress,
+            'type: agentData.networkType
+        };
+    }
+    if agentData.policy.length() > 0 {
+        agent.policy = agentData.policy;
+    }
+    if agentData.purposeOfUseCode != "" {
+        agent.purposeOfUse = [{
+            coding: [getCoding("http://terminology.hl7.org/CodeSystem/v3-ActReason", agentData.purposeOfUseCode)]
+        }];
+    }
     return agent;
 };
 
-isolated function getEntity(string 'type, string role, string whatReference) returns international401:AuditEventEntity {
+isolated function getEntity(AuditEntity entityData) returns international401:AuditEventEntity {
+    r4:Reference what = {};
+    if entityData.whatReference != "" {
+        what.reference = entityData.whatReference;
+    }
+    if entityData.whatIdentifierSystem != "" || entityData.whatIdentifierValue != "" {
+        what.identifier = {
+            system: entityData.whatIdentifierSystem != "" ? entityData.whatIdentifierSystem : (),
+            value: entityData.whatIdentifierValue != "" ? entityData.whatIdentifierValue : ()
+        };
+    }
+
     international401:AuditEventEntity entity = {
-        'type: getCoding("http://terminology.hl7.org/CodeSystem/audit-entity-type", 'type),
-        role: getCoding("http://terminology.hl7.org/CodeSystem/object-role", role),
-        what: {
-            reference: whatReference
-        }
+        'type: getCoding("http://terminology.hl7.org/CodeSystem/audit-entity-type", entityData.typeCode),
+        role: getCoding("http://terminology.hl7.org/CodeSystem/object-role", entityData.roleCode),
+        what: what
     };
+
+    if entityData.name != "" {
+        entity.name = entityData.name;
+    }
+    if entityData.queryDetail != "" {
+        international401:AuditEventEntityDetail queryEntry = {
+            'type: "query",
+            valueString: entityData.queryDetail
+        };
+        entity.detail = [queryEntry];
+    }
+    if entityData.lifecycleCode != "" {
+        entity.lifecycle = getCoding("http://terminology.hl7.org/CodeSystem/dicom-audit-lifecycle", entityData.lifecycleCode);
+    }
+    if entityData.securityLabelCodes.length() > 0 {
+        r4:Coding[] labels = [];
+        foreach string code in entityData.securityLabelCodes {
+            labels.push(getCoding("http://terminology.hl7.org/CodeSystem/v3-Confidentiality", code));
+        }
+        entity.securityLabel = labels;
+    }
     return entity;
+};
+
+isolated function getSourceObserver(InternalAuditEvent e) returns r4:Reference {
+    r4:Reference observer = {
+        display: e.sourceObserverName == "" ? fhirServerName : e.sourceObserverName
+    };
+    if e.sourceObserverIdentifierSystem != "" || e.sourceObserverIdentifierValue != "" {
+        observer.identifier = {
+            system: e.sourceObserverIdentifierSystem != "" ? e.sourceObserverIdentifierSystem : (),
+            value: e.sourceObserverIdentifierValue != "" ? e.sourceObserverIdentifierValue : ()
+        };
+    }
+    return observer;
 };
