@@ -12,6 +12,10 @@ import wso2/FRCoreService.location as locationMod;
 import wso2/FRCoreService.healthcare_service as healthcareServiceMod;
 import wso2/FRCoreService.endpoint as endpointMod;
 import wso2/FRCoreService.org_affiliation as orgAffiliationMod;
+import wso2/FRCoreService.validation;
+
+// Validation pipeline — shared across all resource write handlers (Step 5)
+final validation:ValidationPipeline validationPipeline = validation:buildDefaultPipeline();
 
 configurable int port = 9098;
 configurable int adminPort = 9099;
@@ -44,6 +48,10 @@ service /fhir/Organization on orgFhirListener {
 
     // ITI-90 Search (also handles POST /_search automatically)
     resource function get .(r4:FHIRContext fhirContext) returns json|r4:FHIRError {
+        if !fhir_utils:isTransactionEnabled("ITI-90") {
+            return r4:createFHIRError("ITI-90 Find Matching Care Services is not enabled for this tenant",
+                    r4:ERROR, r4:PROCESSING_NOT_SUPPORTED, httpStatusCode = 501);
+        }
         logRequest("GET", "/fhir/Organization");
         types:OrgSearchParams params = fhirContextToOrgSearchParams(fhirContext);
         json[]|error results = organizationMod:searchOrganizations(params);
@@ -60,6 +68,10 @@ service /fhir/Organization on orgFhirListener {
     // ITI-90 Read
     resource function get [string id](r4:FHIRContext fhirContext)
             returns mcsd_package:MCSDOrganization|r4:FHIRError {
+        if !fhir_utils:isTransactionEnabled("ITI-90") {
+            return r4:createFHIRError("ITI-90 Find Matching Care Services is not enabled for this tenant",
+                    r4:ERROR, r4:PROCESSING_NOT_SUPPORTED, httpStatusCode = 501);
+        }
         logRequest("GET", "/fhir/Organization/" + id);
         json|()|error result = organizationMod:getOrganization(id);
         if result is error {
@@ -81,6 +93,10 @@ service /fhir/Organization on orgFhirListener {
 
     // ITI-91 Type History
     resource function get _history(r4:FHIRContext fhirContext) returns json|r4:FHIRError {
+        if !fhir_utils:isTransactionEnabled("ITI-91") {
+            return r4:createFHIRError("ITI-91 Request Care Services Updates is not enabled for this tenant",
+                    r4:ERROR, r4:PROCESSING_NOT_SUPPORTED, httpStatusCode = 501);
+        }
         logRequest("GET", "/fhir/Organization/_history");
         r4:RequestSearchParameter[]? sinceParams = fhirContext.getRequestSearchParameter("_since");
         string? since = sinceParams is r4:RequestSearchParameter[] && sinceParams.length() > 0
@@ -96,6 +112,10 @@ service /fhir/Organization on orgFhirListener {
 
     // ITI-91 Instance History
     resource function get [string id]/_history(r4:FHIRContext fhirContext) returns json|r4:FHIRError {
+        if !fhir_utils:isTransactionEnabled("ITI-91") {
+            return r4:createFHIRError("ITI-91 Request Care Services Updates is not enabled for this tenant",
+                    r4:ERROR, r4:PROCESSING_NOT_SUPPORTED, httpStatusCode = 501);
+        }
         logRequest("GET", "/fhir/Organization/" + id + "/_history");
         json|error bundle = handleHistory("Organization", (), fhirBaseUrl);
         if bundle is error {
@@ -109,7 +129,23 @@ service /fhir/Organization on orgFhirListener {
     // ITI-130 Create
     resource function post .(r4:FHIRContext fhirContext, json payload)
             returns mcsd_package:MCSDOrganization|r4:FHIRError {
+        if !fhir_utils:isTransactionEnabled("ITI-130") {
+            return r4:createFHIRError("ITI-130 Care Services Feed is not enabled for this tenant",
+                    r4:ERROR, r4:PROCESSING_NOT_SUPPORTED, httpStatusCode = 501);
+        }
         logRequest("POST", "/fhir/Organization");
+
+        // Validate payload
+        validation:ValidationResult vr = validationPipeline.run({
+            resourceType: "Organization",
+            payload: payload,
+            tenantId: fhir_utils:getIgConfig().id,
+            operation: "create"
+        });
+        if !vr.valid {
+            return r4:createFHIRError(vr.errors[0], r4:ERROR, r4:INVALID, httpStatusCode = 422);
+        }
+
         string typeCode = fhir_utils:extractTypeCode(payload);
         string|error createdId;
         if typeCode == "jurisdiction" {
@@ -152,7 +188,21 @@ service /fhir/Organization on orgFhirListener {
     // ITI-130 Update
     resource function put [string id](r4:FHIRContext fhirContext, json payload)
             returns mcsd_package:MCSDOrganization|r4:FHIRError {
+        if !fhir_utils:isTransactionEnabled("ITI-130") {
+            return r4:createFHIRError("ITI-130 Care Services Feed is not enabled for this tenant",
+                    r4:ERROR, r4:PROCESSING_NOT_SUPPORTED, httpStatusCode = 501);
+        }
         logRequest("PUT", "/fhir/Organization/" + id);
+        // Validate payload
+        validation:ValidationResult vrOrg = validationPipeline.run({
+            resourceType: "Organization",
+            payload: payload,
+            tenantId: fhir_utils:getIgConfig().id,
+            operation: "update"
+        });
+        if !vrOrg.valid {
+            return r4:createFHIRError(vrOrg.errors[0], r4:ERROR, r4:INVALID, httpStatusCode = 422);
+        }
         boolean|error updated = organizationMod:updateOrganization(id, payload);
         if updated is error {
             return r4:createFHIRError("Update Organization failed", r4:ERROR, r4:TRANSIENT_EXCEPTION,
@@ -177,6 +227,10 @@ service /fhir/Organization on orgFhirListener {
 
     // ITI-130 Delete
     resource function delete [string id](r4:FHIRContext fhirContext) returns r4:FHIRError? {
+        if !fhir_utils:isTransactionEnabled("ITI-130") {
+            return r4:createFHIRError("ITI-130 Care Services Feed is not enabled for this tenant",
+                    r4:ERROR, r4:PROCESSING_NOT_SUPPORTED, httpStatusCode = 501);
+        }
         logRequest("DELETE", "/fhir/Organization/" + id);
         boolean|error deleted = organizationMod:deleteOrganization(id);
         if deleted is error {
@@ -199,6 +253,10 @@ service /fhir/Organization on orgFhirListener {
 service /fhir/Location on locFhirListener {
 
     resource function get .(r4:FHIRContext fhirContext) returns json|r4:FHIRError {
+        if !fhir_utils:isTransactionEnabled("ITI-90") {
+            return r4:createFHIRError("ITI-90 Find Matching Care Services is not enabled for this tenant",
+                    r4:ERROR, r4:PROCESSING_NOT_SUPPORTED, httpStatusCode = 501);
+        }
         logRequest("GET", "/fhir/Location");
         types:LocationSearchParams params = fhirContextToLocationSearchParams(fhirContext);
         json[]|error results = locationMod:searchLocations(params);
@@ -214,6 +272,10 @@ service /fhir/Location on locFhirListener {
 
     resource function get [string id](r4:FHIRContext fhirContext)
             returns mcsd_package:MCSDLocation|r4:FHIRError {
+        if !fhir_utils:isTransactionEnabled("ITI-90") {
+            return r4:createFHIRError("ITI-90 Find Matching Care Services is not enabled for this tenant",
+                    r4:ERROR, r4:PROCESSING_NOT_SUPPORTED, httpStatusCode = 501);
+        }
         logRequest("GET", "/fhir/Location/" + id);
         json|()|error result = locationMod:getLocation(id);
         if result is error {
@@ -234,6 +296,10 @@ service /fhir/Location on locFhirListener {
     }
 
     resource function get _history(r4:FHIRContext fhirContext) returns json|r4:FHIRError {
+        if !fhir_utils:isTransactionEnabled("ITI-91") {
+            return r4:createFHIRError("ITI-91 Request Care Services Updates is not enabled for this tenant",
+                    r4:ERROR, r4:PROCESSING_NOT_SUPPORTED, httpStatusCode = 501);
+        }
         logRequest("GET", "/fhir/Location/_history");
         r4:RequestSearchParameter[]? sinceParams = fhirContext.getRequestSearchParameter("_since");
         string? since = sinceParams is r4:RequestSearchParameter[] && sinceParams.length() > 0
@@ -248,6 +314,10 @@ service /fhir/Location on locFhirListener {
     }
 
     resource function get [string id]/_history(r4:FHIRContext fhirContext) returns json|r4:FHIRError {
+        if !fhir_utils:isTransactionEnabled("ITI-91") {
+            return r4:createFHIRError("ITI-91 Request Care Services Updates is not enabled for this tenant",
+                    r4:ERROR, r4:PROCESSING_NOT_SUPPORTED, httpStatusCode = 501);
+        }
         logRequest("GET", "/fhir/Location/" + id + "/_history");
         json|error bundle = handleHistory("Location", (), fhirBaseUrl);
         if bundle is error {
@@ -260,7 +330,21 @@ service /fhir/Location on locFhirListener {
 
     resource function post .(r4:FHIRContext fhirContext, json payload)
             returns mcsd_package:MCSDLocation|r4:FHIRError {
+        if !fhir_utils:isTransactionEnabled("ITI-130") {
+            return r4:createFHIRError("ITI-130 Care Services Feed is not enabled for this tenant",
+                    r4:ERROR, r4:PROCESSING_NOT_SUPPORTED, httpStatusCode = 501);
+        }
         logRequest("POST", "/fhir/Location");
+        // Validate payload
+        validation:ValidationResult vrLoc = validationPipeline.run({
+            resourceType: "Location",
+            payload: payload,
+            tenantId: fhir_utils:getIgConfig().id,
+            operation: "create"
+        });
+        if !vrLoc.valid {
+            return r4:createFHIRError(vrLoc.errors[0], r4:ERROR, r4:INVALID, httpStatusCode = 422);
+        }
         string typeCode = fhir_utils:extractTypeCode(payload);
         string|error createdId;
         if typeCode == "jurisdiction" {
@@ -302,7 +386,21 @@ service /fhir/Location on locFhirListener {
 
     resource function put [string id](r4:FHIRContext fhirContext, json payload)
             returns mcsd_package:MCSDLocation|r4:FHIRError {
+        if !fhir_utils:isTransactionEnabled("ITI-130") {
+            return r4:createFHIRError("ITI-130 Care Services Feed is not enabled for this tenant",
+                    r4:ERROR, r4:PROCESSING_NOT_SUPPORTED, httpStatusCode = 501);
+        }
         logRequest("PUT", "/fhir/Location/" + id);
+        // Validate payload
+        validation:ValidationResult vrLocUpd = validationPipeline.run({
+            resourceType: "Location",
+            payload: payload,
+            tenantId: fhir_utils:getIgConfig().id,
+            operation: "update"
+        });
+        if !vrLocUpd.valid {
+            return r4:createFHIRError(vrLocUpd.errors[0], r4:ERROR, r4:INVALID, httpStatusCode = 422);
+        }
         boolean|error updated = locationMod:updateLocation(id, payload);
         if updated is error {
             return r4:createFHIRError("Update Location failed", r4:ERROR, r4:TRANSIENT_EXCEPTION,
@@ -326,6 +424,10 @@ service /fhir/Location on locFhirListener {
     }
 
     resource function delete [string id](r4:FHIRContext fhirContext) returns r4:FHIRError? {
+        if !fhir_utils:isTransactionEnabled("ITI-130") {
+            return r4:createFHIRError("ITI-130 Care Services Feed is not enabled for this tenant",
+                    r4:ERROR, r4:PROCESSING_NOT_SUPPORTED, httpStatusCode = 501);
+        }
         logRequest("DELETE", "/fhir/Location/" + id);
         boolean|error deleted = locationMod:deleteLocation(id);
         if deleted is error {
@@ -348,6 +450,10 @@ service /fhir/Location on locFhirListener {
 service /fhir/HealthcareService on svcFhirListener {
 
     resource function get .(r4:FHIRContext fhirContext) returns json|r4:FHIRError {
+        if !fhir_utils:isTransactionEnabled("ITI-90") {
+            return r4:createFHIRError("ITI-90 Find Matching Care Services is not enabled for this tenant",
+                    r4:ERROR, r4:PROCESSING_NOT_SUPPORTED, httpStatusCode = 501);
+        }
         logRequest("GET", "/fhir/HealthcareService");
         types:HealthcareServiceSearchParams params = fhirContextToSvcSearchParams(fhirContext);
         json[]|error results = healthcareServiceMod:searchHealthcareServices(params);
@@ -361,6 +467,10 @@ service /fhir/HealthcareService on svcFhirListener {
 
     resource function get [string id](r4:FHIRContext fhirContext)
             returns mcsd_package:MCSDHealthcareService|r4:FHIRError {
+        if !fhir_utils:isTransactionEnabled("ITI-90") {
+            return r4:createFHIRError("ITI-90 Find Matching Care Services is not enabled for this tenant",
+                    r4:ERROR, r4:PROCESSING_NOT_SUPPORTED, httpStatusCode = 501);
+        }
         logRequest("GET", "/fhir/HealthcareService/" + id);
         json|()|error result = healthcareServiceMod:getHealthcareService(id);
         if result is error {
@@ -381,6 +491,10 @@ service /fhir/HealthcareService on svcFhirListener {
     }
 
     resource function get _history(r4:FHIRContext fhirContext) returns json|r4:FHIRError {
+        if !fhir_utils:isTransactionEnabled("ITI-91") {
+            return r4:createFHIRError("ITI-91 Request Care Services Updates is not enabled for this tenant",
+                    r4:ERROR, r4:PROCESSING_NOT_SUPPORTED, httpStatusCode = 501);
+        }
         logRequest("GET", "/fhir/HealthcareService/_history");
         r4:RequestSearchParameter[]? sinceParams = fhirContext.getRequestSearchParameter("_since");
         string? since = sinceParams is r4:RequestSearchParameter[] && sinceParams.length() > 0
@@ -396,7 +510,21 @@ service /fhir/HealthcareService on svcFhirListener {
 
     resource function post .(r4:FHIRContext fhirContext, json payload)
             returns mcsd_package:MCSDHealthcareService|r4:FHIRError {
+        if !fhir_utils:isTransactionEnabled("ITI-130") {
+            return r4:createFHIRError("ITI-130 Care Services Feed is not enabled for this tenant",
+                    r4:ERROR, r4:PROCESSING_NOT_SUPPORTED, httpStatusCode = 501);
+        }
         logRequest("POST", "/fhir/HealthcareService");
+        // Validate payload
+        validation:ValidationResult vrHs = validationPipeline.run({
+            resourceType: "HealthcareService",
+            payload: payload,
+            tenantId: fhir_utils:getIgConfig().id,
+            operation: "create"
+        });
+        if !vrHs.valid {
+            return r4:createFHIRError(vrHs.errors[0], r4:ERROR, r4:INVALID, httpStatusCode = 422);
+        }
         mcsd_package:MCSDHealthcareService|error svc = payload.cloneWithType(mcsd_package:MCSDHealthcareService);
         if svc is error {
             return r4:createFHIRError("Invalid MCSDHealthcareService", r4:ERROR, r4:INVALID,
@@ -424,7 +552,21 @@ service /fhir/HealthcareService on svcFhirListener {
 
     resource function put [string id](r4:FHIRContext fhirContext, json payload)
             returns mcsd_package:MCSDHealthcareService|r4:FHIRError {
+        if !fhir_utils:isTransactionEnabled("ITI-130") {
+            return r4:createFHIRError("ITI-130 Care Services Feed is not enabled for this tenant",
+                    r4:ERROR, r4:PROCESSING_NOT_SUPPORTED, httpStatusCode = 501);
+        }
         logRequest("PUT", "/fhir/HealthcareService/" + id);
+        // Validate payload
+        validation:ValidationResult vrHsUpd = validationPipeline.run({
+            resourceType: "HealthcareService",
+            payload: payload,
+            tenantId: fhir_utils:getIgConfig().id,
+            operation: "update"
+        });
+        if !vrHsUpd.valid {
+            return r4:createFHIRError(vrHsUpd.errors[0], r4:ERROR, r4:INVALID, httpStatusCode = 422);
+        }
         boolean|error updated = healthcareServiceMod:updateHealthcareService(id, payload);
         if updated is error {
             return r4:createFHIRError("Update HealthcareService failed", r4:ERROR, r4:TRANSIENT_EXCEPTION,
@@ -448,6 +590,10 @@ service /fhir/HealthcareService on svcFhirListener {
     }
 
     resource function delete [string id](r4:FHIRContext fhirContext) returns r4:FHIRError? {
+        if !fhir_utils:isTransactionEnabled("ITI-130") {
+            return r4:createFHIRError("ITI-130 Care Services Feed is not enabled for this tenant",
+                    r4:ERROR, r4:PROCESSING_NOT_SUPPORTED, httpStatusCode = 501);
+        }
         logRequest("DELETE", "/fhir/HealthcareService/" + id);
         boolean|error deleted = healthcareServiceMod:deleteHealthcareService(id);
         if deleted is error {
@@ -470,6 +616,10 @@ service /fhir/HealthcareService on svcFhirListener {
 service /fhir/Endpoint on epFhirListener {
 
     resource function get .(r4:FHIRContext fhirContext) returns json|r4:FHIRError {
+        if !fhir_utils:isTransactionEnabled("ITI-90") {
+            return r4:createFHIRError("ITI-90 Find Matching Care Services is not enabled for this tenant",
+                    r4:ERROR, r4:PROCESSING_NOT_SUPPORTED, httpStatusCode = 501);
+        }
         logRequest("GET", "/fhir/Endpoint");
         types:EndpointSearchParams params = fhirContextToEndpointSearchParams(fhirContext);
         json[]|error results = endpointMod:searchEndpoints(params);
@@ -483,6 +633,10 @@ service /fhir/Endpoint on epFhirListener {
 
     resource function get [string id](r4:FHIRContext fhirContext)
             returns mcsd_package:MCSDEndpoint|r4:FHIRError {
+        if !fhir_utils:isTransactionEnabled("ITI-90") {
+            return r4:createFHIRError("ITI-90 Find Matching Care Services is not enabled for this tenant",
+                    r4:ERROR, r4:PROCESSING_NOT_SUPPORTED, httpStatusCode = 501);
+        }
         logRequest("GET", "/fhir/Endpoint/" + id);
         json|()|error result = endpointMod:getEndpoint(id);
         if result is error {
@@ -504,7 +658,21 @@ service /fhir/Endpoint on epFhirListener {
 
     resource function post .(r4:FHIRContext fhirContext, json payload)
             returns mcsd_package:MCSDEndpoint|r4:FHIRError {
+        if !fhir_utils:isTransactionEnabled("ITI-130") {
+            return r4:createFHIRError("ITI-130 Care Services Feed is not enabled for this tenant",
+                    r4:ERROR, r4:PROCESSING_NOT_SUPPORTED, httpStatusCode = 501);
+        }
         logRequest("POST", "/fhir/Endpoint");
+        // Validate payload
+        validation:ValidationResult vrEp = validationPipeline.run({
+            resourceType: "Endpoint",
+            payload: payload,
+            tenantId: fhir_utils:getIgConfig().id,
+            operation: "create"
+        });
+        if !vrEp.valid {
+            return r4:createFHIRError(vrEp.errors[0], r4:ERROR, r4:INVALID, httpStatusCode = 422);
+        }
         mcsd_package:MCSDEndpoint|error ep = payload.cloneWithType(mcsd_package:MCSDEndpoint);
         if ep is error {
             return r4:createFHIRError("Invalid MCSDEndpoint", r4:ERROR, r4:INVALID,
@@ -537,6 +705,10 @@ service /fhir/Endpoint on epFhirListener {
 service /fhir/OrganizationAffiliation on affFhirListener {
 
     resource function get .(r4:FHIRContext fhirContext) returns json|r4:FHIRError {
+        if !fhir_utils:isTransactionEnabled("ITI-90") {
+            return r4:createFHIRError("ITI-90 Find Matching Care Services is not enabled for this tenant",
+                    r4:ERROR, r4:PROCESSING_NOT_SUPPORTED, httpStatusCode = 501);
+        }
         logRequest("GET", "/fhir/OrganizationAffiliation");
         types:OrgAffiliationSearchParams params = fhirContextToAffiliationSearchParams(fhirContext);
         json[]|error results = orgAffiliationMod:searchOrgAffiliations(params);
@@ -551,6 +723,10 @@ service /fhir/OrganizationAffiliation on affFhirListener {
 
     resource function get [string id](r4:FHIRContext fhirContext)
             returns mcsd_package:MCSDOrganizationAffiliation|r4:FHIRError {
+        if !fhir_utils:isTransactionEnabled("ITI-90") {
+            return r4:createFHIRError("ITI-90 Find Matching Care Services is not enabled for this tenant",
+                    r4:ERROR, r4:PROCESSING_NOT_SUPPORTED, httpStatusCode = 501);
+        }
         logRequest("GET", "/fhir/OrganizationAffiliation/" + id);
         json|()|error result = orgAffiliationMod:getOrgAffiliation(id);
         if result is error {
@@ -573,7 +749,21 @@ service /fhir/OrganizationAffiliation on affFhirListener {
 
     resource function post .(r4:FHIRContext fhirContext, json payload)
             returns mcsd_package:MCSDOrganizationAffiliation|r4:FHIRError {
+        if !fhir_utils:isTransactionEnabled("ITI-130") {
+            return r4:createFHIRError("ITI-130 Care Services Feed is not enabled for this tenant",
+                    r4:ERROR, r4:PROCESSING_NOT_SUPPORTED, httpStatusCode = 501);
+        }
         logRequest("POST", "/fhir/OrganizationAffiliation");
+        // Validate payload
+        validation:ValidationResult vrAff = validationPipeline.run({
+            resourceType: "OrganizationAffiliation",
+            payload: payload,
+            tenantId: fhir_utils:getIgConfig().id,
+            operation: "create"
+        });
+        if !vrAff.valid {
+            return r4:createFHIRError(vrAff.errors[0], r4:ERROR, r4:INVALID, httpStatusCode = 422);
+        }
         mcsd_package:MCSDOrganizationAffiliation|error aff =
                 payload.cloneWithType(mcsd_package:MCSDOrganizationAffiliation);
         if aff is error {
@@ -609,7 +799,7 @@ service /fhir/OrganizationAffiliation on affFhirListener {
 service /fhir on orgFhirListener {
     resource function get metadata(r4:FHIRContext fhirContext) returns json {
         logRequest("GET", "/fhir/metadata");
-        return buildCapabilityStatement(fhirBaseUrl);
+        return buildCapabilityStatement(fhirBaseUrl, fhir_utils:getIgConfig());
     }
 }
 

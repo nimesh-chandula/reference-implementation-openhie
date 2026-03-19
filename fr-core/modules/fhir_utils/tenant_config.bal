@@ -132,6 +132,25 @@ public function getResourceConfig(string resourceType) returns IGResourceConfig?
     return ();
 }
 
+// Returns the tenant/IG identifier from the active configuration.
+public function getTenantId() returns string {
+    return igConfig.id;
+}
+
+// Returns true if the given IHE transaction type is enabled for this tenant.
+// txType: "ITI-90" | "ITI-91" | "ITI-130"
+public function isTransactionEnabled(string txType) returns boolean {
+    IGTransactionConfig txConfig = igConfig.transactions;
+    if txType == "ITI-90" {
+        return txConfig.iti90;
+    } else if txType == "ITI-91" {
+        return txConfig.iti91;
+    } else if txType == "ITI-130" {
+        return txConfig.iti130;
+    }
+    return false;
+}
+
 // Returns the profile URL for the given resource type and type code.
 // typeCode is "facility" | "jurisdiction" | "" (default).
 // Falls back to the base profile if no facility/jurisdiction variant is configured.

@@ -259,9 +259,6 @@ dependencies = [
 	{org = "ballerina", name = "lang.value"},
 	{org = "ballerina", name = "observe"}
 ]
-modules = [
-	{org = "ballerina", packageName = "log", moduleName = "log"}
-]
 
 [[package]]
 org = "ballerina"
@@ -546,7 +543,6 @@ version = "1.0.0"
 dependencies = [
 	{org = "ballerina", name = "http"},
 	{org = "ballerina", name = "io"},
-	{org = "ballerina", name = "log"},
 	{org = "ballerina", name = "mime"},
 	{org = "ballerina", name = "sql"},
 	{org = "ballerina", name = "test"},
@@ -573,6 +569,8 @@ modules = [
 	{org = "wso2", packageName = "FRCoreService", moduleName = "FRCoreService.r4_api_config"},
 	{org = "wso2", packageName = "FRCoreService", moduleName = "FRCoreService.repository"},
 	{org = "wso2", packageName = "FRCoreService", moduleName = "FRCoreService.search_registry"},
-	{org = "wso2", packageName = "FRCoreService", moduleName = "FRCoreService.types"}
+	{org = "wso2", packageName = "FRCoreService", moduleName = "FRCoreService.transaction"},
+	{org = "wso2", packageName = "FRCoreService", moduleName = "FRCoreService.types"},
+	{org = "wso2", packageName = "FRCoreService", moduleName = "FRCoreService.validation"}
 ]
 

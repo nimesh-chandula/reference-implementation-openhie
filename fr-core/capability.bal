@@ -15,17 +15,17 @@ import wso2/FRCoreService.search_registry;
 // ─────────────────────────────────────────────────────────────────────────────
 
 // Build the complete FHIR R4 CapabilityStatement for the active tenant/IG.
-function buildCapabilityStatement(string baseUrl) returns json {
-    fhir_utils:IGConfig igConfig = fhir_utils:getIgConfig();
-
-    // Build the resource capability entries from igConfig
+// Pure function: accepts IGConfig as parameter so it can be unit-tested without module-level I/O.
+function buildCapabilityStatement(string baseUrl, fhir_utils:IGConfig igConfig) returns json {
+    // Build the resource capability entries — profile URLs via profileAdapter
     json[] resourceCapabilities = [];
     foreach fhir_utils:IGResourceConfig rc in igConfig.resources {
+        string profile = fhir_utils:profileAdapter.getProfileUrl(rc.resourceType, "");
         json[] searchParams = getSearchParamsForResource(rc.resourceType);
         resourceCapabilities.push(
             buildResourceCapability(
                 rc.resourceType,
-                rc.profile,
+                profile,
                 searchParams,
                 rc.interactions,
                 rc.supportsHistory
@@ -39,6 +39,19 @@ function buildCapabilityStatement(string baseUrl) returns json {
         instantiatesJson.push(url);
     }
 
+    // Build transaction description from enabled transactions only (igConfig.transactions)
+    string[] txParts = [];
+    if igConfig.transactions.iti90 {
+        txParts.push("ITI-90 (Find Matching Care Services)");
+    }
+    if igConfig.transactions.iti91 {
+        txParts.push("ITI-91 (Request Care Services Updates)");
+    }
+    if igConfig.transactions.iti130 {
+        txParts.push("ITI-130 (Care Services Feed)");
+    }
+    string txDesc = buildTxDescription(txParts);
+
     return {
         "resourceType": "CapabilityStatement",
         "id": uuid:createType1AsString(),
@@ -51,10 +64,7 @@ function buildCapabilityStatement(string baseUrl) returns json {
         "date": time:utcToString(time:utcNow()),
         "publisher": igConfig.publisher,
         "description": "Capability Statement for the Facility Registry (FR) implementing "
-            + igConfig.name + " Directory Actor. "
-            + "Supports ITI-90 (Find Matching Care Services), "
-            + "ITI-91 (Request Care Services Updates), and "
-            + "ITI-130 (Care Services Feed).",
+            + igConfig.name + " Directory Actor." + txDesc,
         "kind": "instance",
         "instantiates": instantiatesJson,
         "software": {
@@ -70,11 +80,27 @@ function buildCapabilityStatement(string baseUrl) returns json {
         "rest": [
             {
                 "mode": "server",
-                "documentation": "FR Core " + igConfig.name + " Directory actor implementing ITI-90, ITI-91, ITI-130",
+                "documentation": "FR Core " + igConfig.name + " Directory actor." + txDesc,
                 "resource": resourceCapabilities
             }
         ]
     };
+}
+
+// Join enabled transaction names into a human-readable sentence fragment.
+// Returns "" if no transactions are enabled.
+isolated function buildTxDescription(string[] txParts) returns string {
+    if txParts.length() == 0 {
+        return "";
+    }
+    string joined = "";
+    foreach int i in 0 ..< txParts.length() {
+        if i > 0 {
+            joined += ", ";
+        }
+        joined += txParts[i];
+    }
+    return " Supports " + joined + ".";
 }
 
 // Build a resource capability entry.
