@@ -8,7 +8,6 @@ import wso2/FRCoreService.org_affiliation;
 import wso2/FRCoreService.history;
 import wso2/FRCoreService.types;
 import wso2/FRCoreService.fhir_utils;
-import healthcare_samples/mcsd_package;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Public Types
@@ -154,47 +153,15 @@ function buildAffiliationParams(map<string[]> qp) returns types:OrgAffiliationSe
 // ─────────────────────────────────────────────────────────────────────────────
 
 function dispatchCreate(string resourceType, json payload) returns string|error {
+    string typeCode = fhir_utils:extractTypeCode(payload);
+    json validated = check fhir_utils:igTypeAdapter.parseResource(resourceType, typeCode, payload);
     match resourceType {
-        "Organization" => {
-            // Try FacilityOrganization first, fall back to JurisdictionOrganization
-            mcsd_package:MCSDFacilityOrganization|error fac =
-                payload.cloneWithType(mcsd_package:MCSDFacilityOrganization);
-            if fac is mcsd_package:MCSDFacilityOrganization {
-                return organization:createOrganization(fac);
-            }
-            mcsd_package:MCSDJurisdictionOrganization jur =
-                check payload.cloneWithType(mcsd_package:MCSDJurisdictionOrganization);
-            return organization:createOrganization(jur);
-        }
-        "Location" => {
-            // Try FacilityLocation first, fall back to JurisdictionLocation
-            mcsd_package:MCSDFacilityLocation|error fac =
-                payload.cloneWithType(mcsd_package:MCSDFacilityLocation);
-            if fac is mcsd_package:MCSDFacilityLocation {
-                return location:createLocation(fac);
-            }
-            mcsd_package:MCSDJurisdictionLocation jur =
-                check payload.cloneWithType(mcsd_package:MCSDJurisdictionLocation);
-            return location:createLocation(jur);
-        }
-        "HealthcareService" => {
-            mcsd_package:MCSDHealthcareService svc =
-                check payload.cloneWithType(mcsd_package:MCSDHealthcareService);
-            return healthcare_service:createHealthcareService(svc);
-        }
-        "Endpoint" => {
-            mcsd_package:MCSDEndpoint e =
-                check payload.cloneWithType(mcsd_package:MCSDEndpoint);
-            return ep:createEndpoint(e);
-        }
-        "OrganizationAffiliation" => {
-            mcsd_package:MCSDOrganizationAffiliation aff =
-                check payload.cloneWithType(mcsd_package:MCSDOrganizationAffiliation);
-            return org_affiliation:createOrgAffiliation(aff);
-        }
-        _ => {
-            return error("Unsupported resource type for ITI-130 create: " + resourceType);
-        }
+        "Organization"            => { return organization:createOrganization(validated); }
+        "Location"                => { return location:createLocation(validated); }
+        "HealthcareService"       => { return healthcare_service:createHealthcareService(validated); }
+        "Endpoint"                => { return ep:createEndpoint(validated); }
+        "OrganizationAffiliation" => { return org_affiliation:createOrgAffiliation(validated); }
+        _                         => { return error("Unsupported resource type for ITI-130 create: " + resourceType); }
     }
 }
 

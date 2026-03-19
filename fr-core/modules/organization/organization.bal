@@ -1,7 +1,6 @@
 import ballerina/sql;
 import ballerina/uuid;
 import ballerinax/java.jdbc;
-import healthcare_samples/mcsd_package;
 import wso2/FRCoreService.types;
 import wso2/FRCoreService.db;
 import wso2/FRCoreService.fhir_utils;
@@ -9,9 +8,8 @@ import wso2/FRCoreService.fhir_utils;
 // ─────────────────────────────────────────────────────────────
 // ORGANIZATION
 // ─────────────────────────────────────────────────────────────
-public function createOrganization(mcsd_package:MCSDFacilityOrganization|mcsd_package:MCSDJurisdictionOrganization org) returns string|error {
+public function createOrganization(json orgJson) returns string|error {
     string id = uuid:createType1AsString();
-    json orgJson = org.toJson();
     string typeCode = fhir_utils:extractTypeCode(orgJson);
     string profile = fhir_utils:getMcsdProfile("Organization", typeCode);
     json stamped = check fhir_utils:stampMeta(orgJson, id, 1, profile);

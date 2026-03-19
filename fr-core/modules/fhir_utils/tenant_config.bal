@@ -114,6 +114,29 @@ configurable IGConfig igConfig = {
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
+// IGTypeAdapter selection — driven by Config.toml `igAdapterType`
+//
+// Add new IGs here:
+//   1. Write a new XyzIGTypeAdapter class in a new xyz_ig_adapter.bal file
+//   2. Add a branch below: igAdapterType == "xyz" ? new XyzIGTypeAdapter() : ...
+//   3. Set igAdapterType = "xyz" in Config.toml
+// ─────────────────────────────────────────────────────────────────────────────
+configurable string igAdapterType = "mcsd";
+
+// Module-level singleton — all modules access the active IG adapter via this.
+public final IGTypeAdapter igTypeAdapter = resolveIgTypeAdapter();
+
+// Selects the correct IGTypeAdapter based on igAdapterType from Config.toml.
+// Add new IGs here: add a branch and return the corresponding adapter.
+function resolveIgTypeAdapter() returns IGTypeAdapter {
+    if igAdapterType == "mcsd" {
+        return new McsdIGTypeAdapter();
+    }
+    // Default: fall back to mCSD
+    return new McsdIGTypeAdapter();
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Accessor helpers
 // ─────────────────────────────────────────────────────────────────────────────
 

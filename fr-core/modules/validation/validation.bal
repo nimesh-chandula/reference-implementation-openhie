@@ -148,7 +148,11 @@ public class ProfileValidator {
             return {valid: false, errors: ["Payload must be a JSON object"]};
         }
 
-        return validateRequiredFields(ctx.resourceType, payloadMap);
+        string[] igErrors = fhir_utils:igTypeAdapter.validateRequiredFields(ctx.resourceType, payloadMap);
+        if igErrors.length() > 0 {
+            return {valid: false, errors: igErrors};
+        }
+        return {valid: true, errors: []};
     }
 
     public function getName() returns string => "ProfileValidator";
@@ -157,64 +161,6 @@ public class ProfileValidator {
 // ─────────────────────────────────────────────────────────────────────────────
 // Private helpers
 // ─────────────────────────────────────────────────────────────────────────────
-
-// Validate resource-specific required fields. Collects all violations at once
-// so the caller sees the full list of missing fields in one response.
-function validateRequiredFields(string resourceType, map<json> payload) returns ValidationResult {
-    string[] errors = [];
-
-    if resourceType == "Organization" {
-        // Organization.name is required (1..1 per FHIR R4)
-        if !hasNonEmptyField(payload, "name") {
-            errors.push("Organization.name is required");
-        }
-
-    } else if resourceType == "Location" {
-        // Location.name is required per mCSD profile
-        if !hasNonEmptyField(payload, "name") {
-            errors.push("Location.name is required");
-        }
-        // Location.status is required; must be a valid FHIR Location status code
-        if !hasNonEmptyField(payload, "status") {
-            errors.push("Location.status is required");
-        } else {
-            json? statusVal = payload["status"];
-            string status = statusVal is () ? "" : statusVal.toString();
-            if status != "active" && status != "suspended" && status != "inactive" {
-                errors.push("Location.status must be one of: active, suspended, inactive — got: '" + status + "'");
-            }
-        }
-
-    } else if resourceType == "Endpoint" {
-        // Endpoint: status, connectionType, and address (url) are required
-        if !hasNonEmptyField(payload, "status") {
-            errors.push("Endpoint.status is required");
-        }
-        if !hasNonEmptyField(payload, "connectionType") {
-            errors.push("Endpoint.connectionType is required");
-        }
-        if !hasNonEmptyField(payload, "address") {
-            errors.push("Endpoint.address is required");
-        }
-    }
-    // HealthcareService and OrganizationAffiliation have no hard required fields
-    // in the base FHIR spec or the current IGs — skip.
-
-    if errors.length() > 0 {
-        return {valid: false, errors: errors};
-    }
-    return {valid: true, errors: []};
-}
-
-// Returns true if `field` is present in `payload`, is non-null, and non-empty string.
-function hasNonEmptyField(map<json> payload, string fieldName) returns boolean {
-    json? val = payload[fieldName];
-    if val is () {
-        return false;
-    }
-    string str = val.toString();
-    return str.trim().length() > 0 && str != "null";
-}
 
 // Returns true if `id` conforms to the FHIR id type: [A-Za-z0-9\-\.]{1,64}
 isolated function isValidFhirId(string id) returns boolean {

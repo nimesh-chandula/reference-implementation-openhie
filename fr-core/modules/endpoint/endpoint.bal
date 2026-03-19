@@ -1,7 +1,6 @@
 import ballerina/sql;
 import ballerina/uuid;
 import ballerinax/java.jdbc;
-import healthcare_samples/mcsd_package;
 import wso2/FRCoreService.types;
 import wso2/FRCoreService.db;
 import wso2/FRCoreService.fhir_utils;
@@ -9,15 +8,21 @@ import wso2/FRCoreService.fhir_utils;
 // ─────────────────────────────────────────────────────────────
 // ENDPOINT
 // ─────────────────────────────────────────────────────────────
-public function createEndpoint(mcsd_package:MCSDEndpoint ep) returns string|error {
+public function createEndpoint(json epJson) returns string|error {
     string id = uuid:createType1AsString();
-    json epJson = ep.toJson();
     string profile = fhir_utils:getMcsdProfile("Endpoint", "");
     json stamped = check fhir_utils:stampMeta(epJson, id, 1, profile);
 
-    string status = ep.status;
-    string connectionType = ep.connectionType.code ?: "";
-    string address = ep.address;
+    json|error statusVal = epJson.status;
+    string status = statusVal is json ? statusVal.toString() : "";
+    string connectionType = "";
+    json|error ctJson = epJson.connectionType;
+    if ctJson is json {
+        json|error codeVal = ctJson.code;
+        if codeVal is json { connectionType = codeVal.toString(); }
+    }
+    json|error addrVal = epJson.address;
+    string address = addrVal is json ? addrVal.toString() : "";
     string? managingOrgId = ();
     json|error manOrgJson = epJson.managingOrganization;
     if manOrgJson is json {

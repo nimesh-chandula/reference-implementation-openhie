@@ -1,7 +1,6 @@
 import ballerina/sql;
 import ballerina/uuid;
 import ballerinax/java.jdbc;
-import healthcare_samples/mcsd_package;
 import wso2/FRCoreService.types;
 import wso2/FRCoreService.db;
 import wso2/FRCoreService.fhir_utils;
@@ -9,13 +8,13 @@ import wso2/FRCoreService.fhir_utils;
 // ─────────────────────────────────────────────────────────────
 // ORGANIZATION AFFILIATION
 // ─────────────────────────────────────────────────────────────
-public function createOrgAffiliation(mcsd_package:MCSDOrganizationAffiliation aff) returns string|error {
+public function createOrgAffiliation(json affJson) returns string|error {
     string id = uuid:createType1AsString();
-    json affJson = aff.toJson();
     string profile = fhir_utils:getMcsdProfile("OrganizationAffiliation", "");
     json stamped = check fhir_utils:stampMeta(affJson, id, 1, profile);
 
-    boolean active = aff.active;
+    json|error activeVal = affJson.active;
+    boolean active = activeVal is json ? activeVal.toString() == "true" : false;
     string primaryOrgId = "";
     string participatingOrgId = "";
     json|error orgRef = affJson.organization;

@@ -1,7 +1,6 @@
 import ballerina/sql;
 import ballerina/uuid;
 import ballerinax/java.jdbc;
-import healthcare_samples/mcsd_package;
 import wso2/FRCoreService.types;
 import wso2/FRCoreService.db;
 import wso2/FRCoreService.fhir_utils;
@@ -9,13 +8,13 @@ import wso2/FRCoreService.fhir_utils;
 // ─────────────────────────────────────────────────────────────
 // HEALTHCARE SERVICE
 // ─────────────────────────────────────────────────────────────
-public function createHealthcareService(mcsd_package:MCSDHealthcareService svc) returns string|error {
+public function createHealthcareService(json svcJson) returns string|error {
     string id = uuid:createType1AsString();
-    json svcJson = svc.toJson();
     string profile = fhir_utils:getMcsdProfile("HealthcareService", "");
     json stamped = check fhir_utils:stampMeta(svcJson, id, 1, profile);
 
-    string name = svc.name;
+    json|error nameVal = svcJson.name;
+    string name = nameVal is json ? nameVal.toString() : "";
     string? providedById = ();
     json|error provJson = svcJson.providedBy;
     if provJson is json {

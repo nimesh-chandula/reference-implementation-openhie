@@ -1,8 +1,6 @@
 import ballerina/http;
 import ballerina/log;
 import ballerina/mime;
-import ballerinax/health.fhir.r4;
-import healthcare_samples/mcsd_package;
 import wso2/FRCoreService.types;
 import wso2/FRCoreService.fhir_utils;
 import wso2/FRCoreService.organization as organizationMod;
@@ -84,13 +82,8 @@ function processResourceEntry(string resourceType, string method, json resourceJ
             return "updated";
         } else {
             string typeCode = fhir_utils:extractTypeCode(resourceJson);
-            if typeCode == "jurisdiction" {
-                mcsd_package:MCSDJurisdictionLocation loc = check resourceJson.cloneWithType(mcsd_package:MCSDJurisdictionLocation);
-                _ = check locationMod:createLocation(loc);
-            } else {
-                mcsd_package:MCSDFacilityLocation loc = check resourceJson.cloneWithType(mcsd_package:MCSDFacilityLocation);
-                _ = check locationMod:createLocation(loc);
-            }
+            json parsed = check fhir_utils:igTypeAdapter.parseResource("Location", typeCode, resourceJson);
+            _ = check locationMod:createLocation(parsed);
             return "created";
         }
     } else if resourceType == "Organization" {
@@ -101,13 +94,8 @@ function processResourceEntry(string resourceType, string method, json resourceJ
             return "updated";
         } else {
             string typeCode = fhir_utils:extractTypeCode(resourceJson);
-            if typeCode == "jurisdiction" {
-                mcsd_package:MCSDJurisdictionOrganization org = check resourceJson.cloneWithType(mcsd_package:MCSDJurisdictionOrganization);
-                _ = check organizationMod:createOrganization(org);
-            } else {
-                mcsd_package:MCSDFacilityOrganization org = check resourceJson.cloneWithType(mcsd_package:MCSDFacilityOrganization);
-                _ = check organizationMod:createOrganization(org);
-            }
+            json parsed = check fhir_utils:igTypeAdapter.parseResource("Organization", typeCode, resourceJson);
+            _ = check organizationMod:createOrganization(parsed);
             return "created";
         }
     } else if resourceType == "HealthcareService" {
@@ -117,17 +105,17 @@ function processResourceEntry(string resourceType, string method, json resourceJ
             _ = check healthcareServiceMod:updateHealthcareService(idJson.toString(), resourceJson);
             return "updated";
         } else {
-            mcsd_package:MCSDHealthcareService svc = check resourceJson.cloneWithType(mcsd_package:MCSDHealthcareService);
-            _ = check healthcareServiceMod:createHealthcareService(svc);
+            json parsed = check fhir_utils:igTypeAdapter.parseResource("HealthcareService", "", resourceJson);
+            _ = check healthcareServiceMod:createHealthcareService(parsed);
             return "created";
         }
     } else if resourceType == "Endpoint" {
-        mcsd_package:MCSDEndpoint ep = check resourceJson.cloneWithType(mcsd_package:MCSDEndpoint);
-        _ = check endpointMod:createEndpoint(ep);
+        json parsed = check fhir_utils:igTypeAdapter.parseResource("Endpoint", "", resourceJson);
+        _ = check endpointMod:createEndpoint(parsed);
         return "created";
     } else if resourceType == "OrganizationAffiliation" {
-        mcsd_package:MCSDOrganizationAffiliation aff = check resourceJson.cloneWithType(mcsd_package:MCSDOrganizationAffiliation);
-        _ = check orgAffiliationMod:createOrgAffiliation(aff);
+        json parsed = check fhir_utils:igTypeAdapter.parseResource("OrganizationAffiliation", "", resourceJson);
+        _ = check orgAffiliationMod:createOrgAffiliation(parsed);
         return "created";
     }
 
@@ -241,7 +229,9 @@ function handleCsvImport(http:Request req) returns types:BulkImportResult|error 
     return result;
 }
 
-// Process a single CSV row — creates a paired MCSDFacilityLocation + MCSDFacilityOrganization
+// Process a single CSV row — creates a paired facility Location + Organization.
+// Builds plain JSON objects so this function is IG-agnostic; the adapter
+// handles type-specific validation via parseResource().
 function processCsvRow(map<string> row) returns string|error {
     string name = row["name"] ?: "";
     if name.length() == 0 {
@@ -258,61 +248,49 @@ function processCsvRow(map<string> row) returns string|error {
     string latStr = row["latitude"] ?: "";
     string lonStr = row["longitude"] ?: "";
 
-    // Build Organization first (to get its ID for Location.managingOrganization)
-    string mCSDTypeSystem = "https://profiles.ihe.net/ITI/mCSD/CodeSystem/IHE.mCSD.Organization.Location.Types";
+    string typeSystem = fhir_utils:igTypeAdapter.getTypeCodeSystem();
 
-    r4:CodeableConcept orgTypeConcept = {
-        coding: [{
-            system: mCSDTypeSystem,
-            code: typeCode
-        }]
+    // Build Organization JSON
+    json orgJson = {
+        "resourceType": "Organization",
+        "name": name + " Administration",
+        "type": [{"coding": [{"system": typeSystem, "code": typeCode}]}]
     };
+    json parsedOrg = check fhir_utils:igTypeAdapter.parseResource("Organization", typeCode, orgJson);
+    string orgId = check organizationMod:createOrganization(parsedOrg);
 
-    mcsd_package:MCSDFacilityOrganization org = {
-        name: name + " Administration",
-        'type: [orgTypeConcept]
-    };
-
-    string orgId = check organizationMod:createOrganization(org);
-
-    // Build position if lat/lon provided
-    mcsd_package:MCSDFacilityLocationPosition? position = ();
+    // Build Location JSON
+    json positionJson = ();
     if latStr.length() > 0 && lonStr.length() > 0 {
         decimal|error lat = decimal:fromString(latStr);
         decimal|error lon = decimal:fromString(lonStr);
         if lat is decimal && lon is decimal {
-            position = {latitude: lat, longitude: lon};
+            positionJson = {"latitude": lat, "longitude": lon};
         }
     }
 
-    // Build address
-    r4:Address? address = ();
+    json addressJson = ();
     if addressText.length() > 0 || city.length() > 0 {
-        address = {
-            text: addressText.length() > 0 ? addressText : (),
-            city: city.length() > 0 ? city : (),
-            district: district.length() > 0 ? district : (),
-            state: state.length() > 0 ? state : (),
-            country: country.length() > 0 ? country : ()
-        };
+        map<json> addr = {};
+        if addressText.length() > 0 { addr["text"] = addressText; }
+        if city.length() > 0 { addr["city"] = city; }
+        if district.length() > 0 { addr["district"] = district; }
+        if state.length() > 0 { addr["state"] = state; }
+        if country.length() > 0 { addr["country"] = country; }
+        addressJson = addr;
     }
 
-    r4:CodeableConcept locTypeConcept = {
-        coding: [{
-            system: mCSDTypeSystem,
-            code: typeCode
-        }]
+    map<json> locMap = {
+        "resourceType": "Location",
+        "name": name,
+        "status": status,
+        "type": [{"coding": [{"system": typeSystem, "code": typeCode}]}],
+        "managingOrganization": {"reference": "Organization/" + orgId}
     };
+    if positionJson !is () { locMap["position"] = positionJson; }
+    if addressJson !is () { locMap["address"] = addressJson; }
 
-    mcsd_package:MCSDFacilityLocation loc = {
-        name: name,
-        status: status,
-        'type: [locTypeConcept],
-        managingOrganization: {reference: "Organization/" + orgId},
-        position: position,
-        address: address
-    };
-
-    _ = check locationMod:createLocation(loc);
+    json parsedLoc = check fhir_utils:igTypeAdapter.parseResource("Location", typeCode, locMap);
+    _ = check locationMod:createLocation(parsedLoc);
     return "created";
 }
