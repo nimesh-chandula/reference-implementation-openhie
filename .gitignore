@@ -43,3 +43,6 @@ Thumbs.db
 
 # Environment / secrets
 .env
+
+# Internal planning docs
+docs/architecture/FR-Project-Plan.md
