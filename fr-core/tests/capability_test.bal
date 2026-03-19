@@ -1,6 +1,6 @@
 import ballerina/test;
 import wso2/FRCoreService.fhir_utils;
-import wso2/FRCoreService.search_registry;
+import wso2/FRCoreService.r4_api_config;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Step 8 Validation Tests — CapabilityStatement Builder
@@ -71,25 +71,15 @@ function testCapabilityStatementResourcesDrivenByConfig() {
     }
 }
 
-// Test: a search param added to the registry at runtime appears in the CapabilityStatement
+// Test: search params in CapabilityStatement come from r4_api_config, not hardcoded registry
+// Verifies that the param count and names match organizationApiConfig.searchParameters
 @test:Config {}
-function testCapabilityStatementSearchParamFromRegistry() {
-    string resourceType = "Organization";
-    string paramName = "step8-custom-param";
-
-    // Register a custom search param for this test
-    search_registry:registerSearchParam(resourceType, {
-        name: paramName,
-        paramType: "token",
-        expression: "Organization.extension:customExt",
-        supportedIGs: []
-    });
-
+function testCapabilityStatementSearchParamsFromR4ApiConfig() {
     fhir_utils:IGConfig cfg = minimalConfig(
         "step8-sp",
         [
             {
-                resourceType: resourceType,
+                resourceType: "Organization",
                 profile: "http://example.org/ig/step8-sp/StructureDefinition/Organization",
                 interactions: ["read", "search-type"],
                 supportsHistory: false
@@ -100,24 +90,34 @@ function testCapabilityStatementSearchParamFromRegistry() {
 
     json cs = buildCapabilityStatement("http://localhost:9098", cfg);
 
-    // Navigate to searchParam array and verify custom param is present
-    boolean found = false;
+    // Count active params from the source of truth
+    int expectedCount = 0;
+    foreach var sp in r4_api_config:organizationApiConfig.searchParameters {
+        if sp.active {
+            expectedCount += 1;
+        }
+    }
+
+    // Verify CapabilityStatement has the same count and includes "_id"
     json[]|error resArr = getRestResources(cs);
     if resArr is json[] && resArr.length() > 0 {
         json|error searchParams = resArr[0].searchParam;
         if searchParams is json {
             json[]|error spArr = searchParams.ensureType();
             if spArr is json[] {
+                test:assertEquals(spArr.length(), expectedCount,
+                    msg = "searchParam count should match active params in organizationApiConfig");
+                boolean hasId = false;
                 foreach json sp in spArr {
                     json|error spName = sp.name;
-                    if spName is json && spName.toString() == paramName {
-                        found = true;
+                    if spName is json && spName.toString() == "_id" {
+                        hasId = true;
                     }
                 }
+                test:assertTrue(hasId, msg = "'_id' param should appear in CapabilityStatement");
             }
         }
     }
-    test:assertTrue(found, msg = "Custom search param '" + paramName + "' should appear in CapabilityStatement");
 }
 
 // Test: description contains only enabled transactions (not disabled ones)

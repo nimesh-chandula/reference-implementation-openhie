@@ -1,7 +1,9 @@
 import ballerina/uuid;
 import ballerina/time;
+import ballerinax/health.fhir.r4;
 import wso2/FRCoreService.fhir_utils;
 import wso2/FRCoreService.search_registry;
+import wso2/FRCoreService.r4_api_config;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // CapabilityStatement Builder — Builder Pattern (§3.10)
@@ -142,16 +144,24 @@ isolated function buildResourceCapability(
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Search parameter definitions per resource type — delegated to Search Registry.
+// Search parameter definitions per resource type.
 //
-// Queries the SearchParamRegistry (modules/search_registry/) and converts each
-// SearchParamDef to the json shape expected by buildResourceCapability().
+// Param names come from r4_api_config (single source of truth — same config
+// that drives the FHIR server routing). paramType + expression come from
+// search_registry metadata. Adding a param to r4_api_config automatically
+// makes it appear here with no registry change required.
 // ─────────────────────────────────────────────────────────────────────────────
 function getSearchParamsForResource(string resourceType) returns json[] {
-    search_registry:SearchParamDef[] defs = search_registry:getSearchParams(resourceType);
+    r4:ResourceAPIConfig? apiCfg = r4_api_config:getResourceApiConfig(resourceType);
+    if apiCfg is () {
+        return [];
+    }
     json[] result = [];
-    foreach search_registry:SearchParamDef def in defs {
-        result.push({"name": def.name, "type": def.paramType, "documentation": def.expression});
+    foreach var sp in apiCfg.searchParameters {
+        if sp.active {
+            search_registry:SearchParamMeta meta = search_registry:getParamMeta(sp.name);
+            result.push({"name": sp.name, "type": meta.paramType, "documentation": meta.expression});
+        }
     }
     return result;
 }
