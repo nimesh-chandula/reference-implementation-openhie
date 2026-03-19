@@ -33,27 +33,6 @@ FHIR R4 Facility Registry implementing the [IHE mCSD (Mobile Care Services Disco
 | Admin API Port | 9099 |
 
 ---
-
-## Architecture
-
-```
-┌─────────────────────────────────────────────────────────┐
-│                     service.bal                         │
-│         FHIR HTTP endpoints (port 9098)                 │
-├──────────────┬──────────────────────────────────────────┤
-│  Validation  │  IGTypeAdapter (plug-in IG profiles)     │
-│  Pipeline    │  McsdIGTypeAdapter  ←  igAdapterType     │
-├──────────────┴──────────────────────────────────────────┤
-│  Resource Modules                                       │
-│  organization │ location │ healthcare_service           │
-│  endpoint     │ org_affiliation                         │
-├─────────────────────────────────────────────────────────┤
-│  db module  (H2 / PostgreSQL via JDBC)                  │
-├─────────────────────────────────────────────────────────┤
-│  admin.bal (port 9099) │ bulk_import.bal │ audit.bal    │
-└─────────────────────────────────────────────────────────┘
-```
-
 Key design patterns used:
 
 - **Profile Adapter Pattern** — `IGTypeAdapter` interface decouples the service from any specific IG Ballerina package. See [Extending to a New IG](#extending-to-a-new-ig) for the full set of files that need updating when switching IGs.
