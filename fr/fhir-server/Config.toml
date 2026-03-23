@@ -1,0 +1,23 @@
+# JDBC Database Configuration for db_handler module
+[ballerina_fhir_server.handlers]
+dbType = "h2"
+dbUrl = "jdbc:h2:./data/fhir-db"
+dbUser = "sa"
+dbPassword = ""
+clearDataOnStartup = false
+
+# Resource ID Generation Configuration
+[ballerina_fhir_server.utils]
+dbType = "h2"
+useServerGeneratedIds = true
+
+# Server Base URL Configuration for mappers module
+[ballerina_fhir_server.mappers]
+baseUrl = "http://localhost:9090"
+
+# International Patient Summary (IPS) Configuration
+[ips]
+custodianOrganization = "Organization/default-hospital"
+authorPractitioner = "Practitioner/system"
+identifierSystem = "urn:oid:2.16.840.1.113883.2.4.6.3"
+documentTitle = "International Patient Summary"

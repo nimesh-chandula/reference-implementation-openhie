@@ -1,0 +1,21 @@
+Resolving Maven dependencies
+	Downloading dependencies into C:\Users\Savinu Anusara\Project\Server\open-healthcare-prebuilt-services\miscellaneous\fhir-server\target\platform-libs
+
+Compiling source
+	ballerinax/ballerina_fhir_server:2.0.1
+HINT [service.bal:(785:31,785:46)] unnecessary condition: expression will always evaluate to 'true'
+WARNING [service.bal:(1450:26,1450:33)] unused variable 'resType'
+HINT [service.bal:(6379:5,6379:5)] concurrent calls will not be made to this method since the method is not an 'isolated' method
+HINT [service.bal:(10025:5,10025:5)] concurrent calls will not be made to this method since the method is not an 'isolated' method
+	warning: Detected conflicting jar files:
+		'ballerina-rt-2201.13.1.jar' dependency of 'ballerinax/ballerina_fhir_server' conflict with 'commons-lang3-3.18.0.jar' dependency of 'ballerina/ftp'
+		'data.xmldata-native-1.6.0.jar' dependency of 'ballerina/ftp' conflict with 'data.xmldata-native-1.6.1.jar' dependency of 'ballerina/data.xmldata'
+
+Running executable
+
+time=2026-03-16T09:21:41.102+05:30 level=INFO module=ballerinax/ballerina_fhir_server.handlers message="Initializing H2 database provider"
+time=2026-03-16T09:21:44.446+05:30 level=INFO module=ballerinax/ballerina_fhir_server.handlers message="Database already exists. Skipping table creation to preserve existing data."
+time=2026-03-16T09:21:44.448+05:30 level=INFO module=ballerinax/ballerina_fhir_server message="DB Init Successfully"
+time=2026-03-16T09:21:44.449+05:30 level=INFO module=ballerinax/ballerina_fhir_server message="Loading custom profiles from database..."
+time=2026-03-16T09:21:44.558+05:30 level=INFO module=ballerinax/ballerina_fhir_server message="Successfully loaded and registered 0 custom profile(s) from database"
+time=2026-03-16T09:21:44.559+05:30 level=INFO module=ballerinax/ballerina_fhir_server message="FHIR Server started successfully"

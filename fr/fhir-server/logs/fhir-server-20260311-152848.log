@@ -1,0 +1,17 @@
+Resolving Maven dependencies (UP-TO-DATE)
+
+Compiling source (UP-TO-DATE)
+	ballerinax/ballerina_fhir_server:2.0.1
+
+Running executable
+
+time=2026-03-11T15:29:04.144+05:30 level=INFO module=ballerinax/ballerina_fhir_server.handlers message="Initializing H2 database provider"
+time=2026-03-11T15:29:08.082+05:30 level=INFO module=ballerinax/ballerina_fhir_server.handlers message="Database already exists. Skipping table creation to preserve existing data."
+time=2026-03-11T15:29:08.084+05:30 level=INFO module=ballerinax/ballerina_fhir_server message="DB Init Successfully"
+time=2026-03-11T15:29:08.086+05:30 level=INFO module=ballerinax/ballerina_fhir_server message="Loading custom profiles from database..."
+time=2026-03-11T15:29:08.247+05:30 level=INFO module=ballerinax/ballerina_fhir_server message="Successfully loaded and registered 0 custom profile(s) from database"
+time=2026-03-11T15:29:08.248+05:30 level=INFO module=ballerinax/ballerina_fhir_server message="FHIR Server started successfully"
+error: no matching service found for path: /fhir/r4/meta
+error: no matching service found for path: /fhir/r4/metadat
+error: no matching service found for path: /fhir/r4
+error: no matching service found for path: /fhir/r4/metadat

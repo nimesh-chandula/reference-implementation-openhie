@@ -1,0 +1,28 @@
+Resolving Maven dependencies
+	Downloading dependencies into C:\Users\Savinu Anusara\Project\Server\open-healthcare-prebuilt-services\miscellaneous\fhir-server\target\platform-libs
+h2-2.3.232.jar   0% [>                     ]    4/2590 KB (0:00:00 / 0:00:00) h2-2.3.232.jar 100% [======================] 2590/2590 KB (0:00:00 / 0:00:00) 
+postgresql-42.7.9.jar   0% [>              ]    3/1105 KB (0:00:00 / 0:00:00) postgresql-42.7.9.jar 100% [===============] 1105/1105 KB (0:00:00 / 0:00:00) 
+
+Compiling source
+	ballerinax/ballerina_fhir_server:2.0.1
+WARNING [ballerina_fhir_server] Detected an attempt to compile this package using Swan Lake Update 13.1. However, this package was built using Swan Lake Update 12.10. To ensure compatibility, the Dependencies.toml file will be updated with the latest versions that are compatible with Update 13.1.
+WARNING [service.bal:(1450:26,1450:33)] unused variable 'resType'
+HINT [service.bal:(6379:5,6379:5)] concurrent calls will not be made to this method since the method is not an 'isolated' method
+HINT [service.bal:(10025:5,10025:5)] concurrent calls will not be made to this method since the method is not an 'isolated' method
+	warning: Detected conflicting jar files:
+		'ballerina-rt-2201.13.1.jar' dependency of 'ballerinax/ballerina_fhir_server' conflict with 'commons-lang3-3.18.0.jar' dependency of 'ballerina/ftp'
+		'data.xmldata-native-1.6.0.jar' dependency of 'ballerina/ftp' conflict with 'data.xmldata-native-1.6.1.jar' dependency of 'ballerina/data.xmldata'
+
+Running executable
+
+time=2026-03-11T15:26:14.316+05:30 level=INFO module=ballerinax/ballerina_fhir_server.handlers message="Initializing H2 database provider"
+time=2026-03-11T15:26:20.169+05:30 level=INFO module=ballerinax/ballerina_fhir_server.handlers message="Populated SEARCH_PARAM_RES_EXPRESSIONS table with 1706 records from CSV"
+time=2026-03-11T15:26:20.172+05:30 level=INFO module=ballerinax/ballerina_fhir_server message="DB Init Successfully"
+time=2026-03-11T15:26:20.174+05:30 level=INFO module=ballerinax/ballerina_fhir_server message="Loading custom profiles from database..."
+time=2026-03-11T15:26:20.375+05:30 level=INFO module=ballerinax/ballerina_fhir_server message="Successfully loaded and registered 0 custom profile(s) from database"
+time=2026-03-11T15:26:20.378+05:30 level=INFO module=ballerinax/ballerina_fhir_server message="FHIR Server started successfully"
+time=2026-03-11T15:26:20.407+05:30 level=ERROR module=ballerinax/ballerina_fhir_server.handlers message="Failed to read Device/fhir-server: Device/fhir-server not found"
+time=2026-03-11T15:26:20.409+05:30 level=INFO module=ballerinax/ballerina_fhir_server message="Device/fhir-server not found, creating..."
+time=2026-03-11T15:26:20.771+05:30 level=INFO module=ballerinax/ballerina_fhir_server message="Successfully created Device/fhir-server"
+error: failed to start server connector '0.0.0.0:9090': Address already in use: bind
+	at ballerina.http.2.Listener:start(http_service_endpoint.bal:54)
