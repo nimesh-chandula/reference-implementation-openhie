@@ -11,12 +11,19 @@ import ballerina/log;
 import ballerina/uuid;
 import ballerinax/health.fhir.r4;
 import ballerinax/health.fhirr4;
-import healthcare_samples/ihe_pdqm_package as pdqm;
+import ballerinax/health.fhir.r4.ihe.pdqm320 as pdqm;
 
 configurable string baseUrl = ?;
 
 // Initialize database on startup
 function init() returns error? {
+    check validateFieldsConfig(matchingConfig);
+    if matchThreshold < 0.0d || matchThreshold > 1.0d {
+        return error("matchThreshold " + matchThreshold.toString() + " is out of range [0.0, 1.0]");
+    }
+    if dedupThreshold < 0.0d || dedupThreshold > 1.0d {
+        return error("dedupThreshold " + dedupThreshold.toString() + " is out of range [0.0, 1.0]");
+    }
     check initDatabase();
     int count = check getPatientCount();
     log:printInfo(string `MPI Service started. Database has ${count} patients.`);
@@ -150,15 +157,24 @@ service /fhir/r4 on new fhirr4:Listener(9090, patientApiConfig) {
             finalMatches = certain;
         }
 
-        // Build Bundle
-        r4:BundleEntry[] entries = [];
+        // Build Bundle — entries typed as json[] to carry the match-grade extension
+        // on search (r4:BundleEntrySearch is a closed record without extension).
+        json[] entries = [];
         foreach MatchResult m in finalMatches {
+            json|error patientAsJson = m.patient.cloneWithType(json);
+            json patientData = patientAsJson is json ? patientAsJson : {};
             entries.push({
-                fullUrl: string `${baseUrl}/Patient/${m.patient.id ?: ""}`,
-                'resource: m.patient,
-                search: {
-                    mode: "match",
-                    score: m.score
+                "fullUrl": string `${baseUrl}/Patient/${m.patient.id ?: ""}`,
+                "resource": patientData,
+                "search": {
+                    "mode": "match",
+                    "score": m.score,
+                    "extension": [
+                        {
+                            "url": "http://hl7.org/fhir/StructureDefinition/match-grade",
+                            "valueCode": m.matchGrade
+                        }
+                    ]
                 }
             });
         }
@@ -169,11 +185,11 @@ service /fhir/r4 on new fhirr4:Listener(9090, patientApiConfig) {
         auditMatch(agentName, entries.length(), true);
 
         return <http:Ok>{body: {
-            resourceType: "Bundle",
-            id: uuid:createType1AsString(),
-            'type: "searchset",
-            total: entries.length(),
-            entry: entries
+            "resourceType": "Bundle",
+            "id": uuid:createType1AsString(),
+            "type": "searchset",
+            "total": entries.length(),
+            "entry": entries
         }};
     }
 

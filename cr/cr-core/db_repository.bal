@@ -1,17 +1,19 @@
 // Copyright (c) 2025, WSO2 LLC. (http://www.wso2.com).
 // Licensed under the Apache License, Version 2.0
 
-// H2 Database Repository for PDQmPatient Storage
-// ===============================================
-// Stores full PDQmPatient FHIR resources in H2 database
+// Database Repository for PDQmPatient Storage (H2 / PostgreSQL)
+// ==============================================================
+// Stores full PDQmPatient FHIR resources in a pluggable SQL database.
+// Set dbType = "h2" (default) or "postgresql" in Config.toml to switch.
 
 import ballerina/sql;
 import ballerina/time;
 import ballerina/uuid;
 import ballerinax/java.jdbc;
 import ballerinax/health.fhir.r4;
-import healthcare_samples/ihe_pdqm_package as pdqm;
+import ballerinax/health.fhir.r4.ihe.pdqm320 as pdqm;
 import ballerina/log;
+import healthcare_samples/client_registry.handlers;
 
 // ============================================================
 // DATABASE CONFIGURATION
@@ -20,6 +22,10 @@ import ballerina/log;
 configurable string dbUrl = ?;
 configurable string dbUser = ?;
 configurable string dbPassword = ?;
+configurable string dbType = "h2";
+
+// Database provider — selected via factory based on dbType
+final handlers:DatabaseProvider dbProvider = check handlers:getDatabaseProvider(dbType);
 
 // Database client - initialized on module load
 final jdbc:Client dbClient = check new (
@@ -85,105 +91,10 @@ public type InvalidPatientError distinct error;
 // DATABASE INITIALIZATION
 // ============================================================
 
-# Initialize database schema
+# Initialize database schema using the active database provider.
 # + return - error if database initialization fails
 public function initDatabase() returns error? {
-    // Patients table - stores full FHIR JSON + indexed search fields
-    _ = check dbClient->execute(`
-        CREATE TABLE IF NOT EXISTS patients (
-            id VARCHAR(64) PRIMARY KEY,
-            resource_json CLOB NOT NULL,
-            active BOOLEAN DEFAULT TRUE,
-            family_name VARCHAR(255),
-            given_name VARCHAR(255),
-            gender VARCHAR(20),
-            birth_date VARCHAR(10),
-            phone VARCHAR(50),
-            email VARCHAR(255),
-            city VARCHAR(100),
-            state VARCHAR(100),
-            postal_code VARCHAR(20),
-            country VARCHAR(100),
-            created_at VARCHAR(30),
-            updated_at VARCHAR(30),
-            version INT DEFAULT 1,
-            blocking_keys_at VARCHAR(30)
-        )
-    `);
-
-    // Identifiers table - for fast identifier lookups
-    _ = check dbClient->execute(`
-        CREATE TABLE IF NOT EXISTS identifiers (
-            row_id INT AUTO_INCREMENT PRIMARY KEY,
-            patient_id VARCHAR(64) NOT NULL,
-            system VARCHAR(500) NOT NULL,
-            "value" VARCHAR(500) NOT NULL,
-            FOREIGN KEY (patient_id) REFERENCES patients(id) ON DELETE CASCADE,
-            UNIQUE (system, "value")
-        )
-    `);
-
-    // Create indexes
-    _ = check dbClient->execute(`CREATE INDEX IF NOT EXISTS idx_ident_patient ON identifiers(patient_id)`);
-    _ = check dbClient->execute(`CREATE INDEX IF NOT EXISTS idx_family ON patients(family_name)`);
-    _ = check dbClient->execute(`CREATE INDEX IF NOT EXISTS idx_given ON patients(given_name)`);
-    _ = check dbClient->execute(`CREATE INDEX IF NOT EXISTS idx_dob ON patients(birth_date)`);
-    _ = check dbClient->execute(`CREATE INDEX IF NOT EXISTS idx_gender ON patients(gender)`);
-    _ = check dbClient->execute(`CREATE INDEX IF NOT EXISTS idx_active ON patients(active)`);
-    _ = check dbClient->execute(`CREATE INDEX IF NOT EXISTS idx_updated_at ON patients(updated_at)`);
-
-
-    // Blocking keys table — pre-computed keys for candidate selection
-    _ = check dbClient->execute(`
-        CREATE TABLE IF NOT EXISTS blocking_keys (
-            row_id INT AUTO_INCREMENT PRIMARY KEY,
-            patient_id VARCHAR(64) NOT NULL,
-            block_type VARCHAR(30) NOT NULL,
-            block_value VARCHAR(255) NOT NULL,
-            FOREIGN KEY (patient_id) REFERENCES patients(id) ON DELETE CASCADE
-        )
-    `);
-    _ = check dbClient->execute(`CREATE INDEX IF NOT EXISTS idx_block_lookup ON blocking_keys(block_type, block_value)`);
-    _ = check dbClient->execute(`CREATE INDEX IF NOT EXISTS idx_block_patient ON blocking_keys(patient_id)`);
-
-    // Dedup compared pairs — tracks which pairs have been scored (for incremental dedup)
-    _ = check dbClient->execute(`
-        CREATE TABLE IF NOT EXISTS dedup_compared_pairs (
-            patient_id_1 VARCHAR(64) NOT NULL,
-            patient_id_2 VARCHAR(64) NOT NULL,
-            compared_at VARCHAR(30) NOT NULL,
-            score DECIMAL(5,4),
-            PRIMARY KEY (patient_id_1, patient_id_2)
-        )
-    `);
-    _ = check dbClient->execute(`
-        CREATE TABLE IF NOT EXISTS dedup_pair_decisions (
-            patient_id_1 VARCHAR(64) NOT NULL,
-            patient_id_2 VARCHAR(64) NOT NULL,
-            decision_id VARCHAR(64) NOT NULL,
-            status VARCHAR(30) NOT NULL,
-            active BOOLEAN DEFAULT TRUE,
-            created_at VARCHAR(30) NOT NULL,
-            updated_at VARCHAR(30) NOT NULL,
-            resolved_at VARCHAR(30),
-            created_by VARCHAR(255),
-            resolved_by VARCHAR(255),
-            resolution_reason VARCHAR(255),
-            PRIMARY KEY (patient_id_1, patient_id_2),
-            FOREIGN KEY (patient_id_1) REFERENCES patients(id) ON DELETE CASCADE,
-            FOREIGN KEY (patient_id_2) REFERENCES patients(id) ON DELETE CASCADE
-        )
-    `);
-    _ = check dbClient->execute(
-        `CREATE INDEX IF NOT EXISTS idx_pair_decisions_p1_status ON dedup_pair_decisions(patient_id_1, status)`
-    );
-    _ = check dbClient->execute(
-        `CREATE INDEX IF NOT EXISTS idx_pair_decisions_p2_status ON dedup_pair_decisions(patient_id_2, status)`
-    );
-    _ = check dbClient->execute(
-        `CREATE INDEX IF NOT EXISTS idx_pair_decisions_active ON dedup_pair_decisions(active)`
-    );
-
+    check dbProvider.initSchema(dbClient);
 }
 
 // ============================================================
@@ -1229,6 +1140,11 @@ isolated function identifierExists(string system, string value) returns boolean|
 # + jsonStr - The JSON string containing patient data
 # + return - A PDQmPatient object on success, or an error on failure
 isolated function parsePatient(string jsonStr) returns pdqm:PDQmPatient|error {
+    pdqm:PDQmPatient|error result = jsonStr.fromJsonStringWithType(pdqm:PDQmPatient);
+    if result is pdqm:PDQmPatient {
+        return result;
+    }
+    // Fallback: two-step parse (handles some JSON structures better in certain runtime versions)
     json patientJson = check jsonStr.fromJsonString();
     return patientJson.cloneWithType();
 }
@@ -1320,7 +1236,7 @@ isolated function getGiven(pdqm:PDQmPatient patient) returns string? {
     if names is r4:HumanName[] && names.length() > 0 {
         string[]? given = names[0].given;
         if given is string[] && given.length() > 0 {
-            return given[0];
+            return string:'join(" ", ...given);
         }
     }
     return ();
@@ -1581,7 +1497,7 @@ isolated function compareFields(pdqm:PDQmPatient a, pdqm:PDQmPatient b) returns 
     // family_name (uses configured algorithm)
     string? aFamily = getFamily(a);
     string? bFamily = getFamily(b);
-    if aFamily is string && bFamily is string && compareField(aFamily, bFamily, fields.family) > 0.0d {
+    if aFamily is string && bFamily is string && compareField(aFamily, bFamily, matchingConfig.fields.family) > 0.0d {
         matchedFields.push("family_name");
     } else {
         unmatchedFields.push("family_name");
@@ -1590,21 +1506,21 @@ isolated function compareFields(pdqm:PDQmPatient a, pdqm:PDQmPatient b) returns 
     // given_name (uses configured algorithm)
     string? aGiven = getGiven(a);
     string? bGiven = getGiven(b);
-    if aGiven is string && bGiven is string && compareField(aGiven, bGiven, fields.given) > 0.0d {
+    if aGiven is string && bGiven is string && compareField(aGiven, bGiven, matchingConfig.fields.given) > 0.0d {
         matchedFields.push("given_name");
     } else {
         unmatchedFields.push("given_name");
     }
 
     // birth_date (uses configured algorithm)
-    if a.birthDate is string && b.birthDate is string && compareField(<string>a.birthDate, <string>b.birthDate, fields.birthDate) > 0.0d {
+    if a.birthDate is string && b.birthDate is string && compareField(<string>a.birthDate, <string>b.birthDate, matchingConfig.fields.birthDate) > 0.0d {
         matchedFields.push("birth_date");
     } else {
         unmatchedFields.push("birth_date");
     }
 
     // gender (uses configured algorithm)
-    if a.gender is string && b.gender is string && compareField(<string>a.gender, <string>b.gender, fields.gender) > 0.0d {
+    if a.gender is string && b.gender is string && compareField(<string>a.gender, <string>b.gender, matchingConfig.fields.gender) > 0.0d {
         matchedFields.push("gender");
     } else {
         unmatchedFields.push("gender");
@@ -1613,7 +1529,7 @@ isolated function compareFields(pdqm:PDQmPatient a, pdqm:PDQmPatient b) returns 
     // phone (uses configured algorithm)
     string? aPhone = getTelecom(a, "phone");
     string? bPhone = getTelecom(b, "phone");
-    if aPhone is string && bPhone is string && compareField(aPhone, bPhone, fields.phone) > 0.0d {
+    if aPhone is string && bPhone is string && compareField(aPhone, bPhone, matchingConfig.fields.phone) > 0.0d {
         matchedFields.push("phone");
     } else {
         unmatchedFields.push("phone");
@@ -1640,7 +1556,7 @@ isolated function compareFields(pdqm:PDQmPatient a, pdqm:PDQmPatient b) returns 
     // postal_code (uses configured algorithm)
     string? aPostal = getAddressField(a, "postalCode");
     string? bPostal = getAddressField(b, "postalCode");
-    if aPostal is string && bPostal is string && compareField(aPostal, bPostal, fields.postalCode) > 0.0d {
+    if aPostal is string && bPostal is string && compareField(aPostal, bPostal, matchingConfig.fields.postalCode) > 0.0d {
         matchedFields.push("postal_code");
     } else {
         unmatchedFields.push("postal_code");
@@ -1729,10 +1645,9 @@ public function deduplicatePatients(decimal threshold = 0.6d) returns DedupResul
 
         decimal score = calculateScore(p1, p2);
 
-        // Record comparison (MERGE = upsert in H2)
+        // Record comparison — upsert delegated to active database provider
         _ = check dbClient->execute(
-            `MERGE INTO dedup_compared_pairs (patient_id_1, patient_id_2, compared_at, score)
-             VALUES (${pair.pid1}, ${pair.pid2}, ${now}, ${score})`
+            dbProvider.getUpsertComparePair(pair.pid1, pair.pid2, now, score)
         );
     }
 
@@ -2224,7 +2139,10 @@ isolated function addCRIdentifier(pdqm:PDQmPatient newPatient, string value)
     // Convert back to PDQmPatient
     pdqm:PDQmPatient|error updatedPatient = updatedJson.cloneWithType();
     if updatedPatient is error {
-        return updatedPatient;
+        // cloneWithType can fail for patients with complex FHIR fields (e.g. Extension choice types).
+        // Fall back to the original patient so the caller can still store the record.
+        log:printWarn("addCRIdentifier: cloneWithType failed — storing patient without CR identifier in resource JSON", updatedPatient);
+        return newPatient;
     }
 
     return updatedPatient;
