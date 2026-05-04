@@ -1,96 +1,11 @@
-# +required The configuration file schema version
 schemaVersion: 1.2
-
-# +optional Incoming connection details for the component
 endpoints:
-  # +required Unique name for the endpoint.
-  - name: client-registry-fhir-api
-    # +required Display name for the endpoint.
-    displayName: Client Registry FHIR API
-    # +required Service section has the user service endpoint details
-    service:
-      # +optional Base path of the API that gets exposed via the endpoint.
-      basePath: /fhir/r4
-      # +required Numeric port value that gets exposed via the endpoint
-      port: 9093
-    # +required Type of traffic that the endpoint is accepting.
-    # Allowed values: REST, GraphQL, GRPC, TCP, UDP, WS.
-    type: REST
-    # +required Network level visibility of the endpoint.
-    # Accepted values: Project|Organization|Public(Default).
-    networkVisibility: Public
-    # +optional Path to the schema definition file. Defaults to wildcard route if not provided.
-    # This is only applicable to REST endpoint types.
-    # The path should be relative to the docker context.
-    # schemaFilePath: oas/ClientRegistryAPI.yaml
-
-# +optional Outgoing connection details for the component.
-dependencies:
-  # +optional Defines the connection references from the Internal Marketplace.
-  connectionReferences:
-    # +required Name of the connection.
-    - name: AuditService
-      # +required Service identifier of the dependent connection.
-      # This should be in the format <Component-Name>/<Endpoint-Name>
-      resourceRef: service:/openhie/audit-service/v1/PUBLIC
-
-# +optional Runtime configurations exposed to the component.
-configurations:
-  # +optional List of environment variables to be injected into the component.
-  env:
-    - name: BASEURL
-      valueFrom:
-        configForm:
-          displayName: FHIR Base URL
-          required: true
-          type: string
-    - name: AUDITSERVICEURL
-      valueFrom:
-        connectionRef:
-          name: AuditService
-          key: ServiceURL
-    - name: AUDITENABLED
-      valueFrom:
-        configForm:
-          displayName: Enable FHIR Audit
-          required: false
-          type: string
-    - name: SOURCEOBSERVERNAME
-      valueFrom:
-        configForm:
-          displayName: Audit Source Observer Name
-          required: false
-          type: string
-    # H2 embedded database (file-based).
-    # NOTE: H2 file storage is not durable on Choreo's stateless containers —
-    # the ./data directory is wiped on every restart/redeploy. For persistent
-    # data, switch dbType to "postgresql" and supply external DB credentials.
-    - name: DBTYPE
-      valueFrom:
-        configForm:
-          displayName: Database Type
-          required: false
-          type: string
-          defaultValue: "h2"
-    - name: DBURL
-      valueFrom:
-        configForm:
-          displayName: Database JDBC URL
-          required: false
-          type: string
-          defaultValue: "jdbc:h2:file:./data/cr-db"
-    - name: DBUSER
-      valueFrom:
-        configForm:
-          displayName: Database User
-          required: false
-          type: string
-          defaultValue: "sa"
-    - name: DBPASSWORD
-      valueFrom:
-        configForm:
-          displayName: Database Password
-          required: false
-          type: string
-          isSecret: true
-          defaultValue: ""
+    - name: client-registry-fhir-api
+      displayName: Client Registry FHIR API
+      service:
+        basePath: /fhir/r4
+        port: 9093
+      type: REST
+      networkVisibilities:
+        - Project
+        - Public
